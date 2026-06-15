@@ -7,6 +7,11 @@ const MENU: { to: string; label: string; perm?: string }[] = [
   { to: "/", label: "Dashboard" },
   { to: "/orders", label: "Đơn hàng", perm: "orders.list" },
   { to: "/customers", label: "Khách hàng", perm: "customers.list" },
+  { to: "/tracking", label: "Tracking", perm: "trackings.list" },
+  { to: "/shipments", label: "Chuyến & Chứng từ", perm: "shipments.list" },
+  { to: "/accounting", label: "Kế toán", perm: "accounting.reconcile" },
+  { to: "/warehouse", label: "Kho VN", perm: "warehouse.weigh_vn" },
+  { to: "/admin", label: "Quản trị", perm: "users.list" },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
