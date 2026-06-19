@@ -1,52 +1,51 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
+import { Card, Table, Form, Select, InputNumber, Input, Button, Tag, App } from "antd";
 import { api } from "../api";
 
 interface Order { id: string; code: string; }
 interface Recon { id: string; orderId: string; jpWeight: string | null; vnWeight: string | null; diffKg: string | null; note: string | null; }
 
 export default function Warehouse() {
+  const { message } = App.useApp();
   const [orders, setOrders] = useState<Order[]>([]);
   const [rows, setRows] = useState<Recon[]>([]);
-  const [form, setForm] = useState({ orderId: "", vnWeight: 0, note: "" });
-  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [form] = Form.useForm();
 
-  const load = () => api.get<Recon[]>("/warehouse/recon").then((r) => setRows(r.data)).catch(() => {});
+  const load = () => { setLoading(true); api.get<Recon[]>("/warehouse/recon").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
   useEffect(() => {
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
     load();
   }, []);
 
-  async function submit(e: FormEvent) {
-    e.preventDefault(); setErr("");
-    try { await api.post("/warehouse/vn-weight", { orderId: form.orderId, vnWeight: Number(form.vnWeight), note: form.note || undefined }); setForm({ orderId: "", vnWeight: 0, note: "" }); load(); }
-    catch { setErr("Ghi cân thất bại"); }
+  async function submit() {
+    const v = await form.validateFields();
+    try { await api.post("/warehouse/vn-weight", v); message.success("Đã ghi cân + đối soát"); form.resetFields(); load(); }
+    catch { message.error("Ghi cân thất bại"); }
   }
 
   return (
-    <div>
-      <h2>Kho VN — Đối soát chênh cân</h2>
-      {err && <p className="err">{err}</p>}
-      <form className="panel" onSubmit={submit}>
-        <div className="row">
-          <select value={form.orderId} onChange={(e) => setForm({ ...form, orderId: e.target.value })} required>
-            <option value="">-- Chọn đơn --</option>
-            {orders.map((o) => <option key={o.id} value={o.id}>{o.code}</option>)}
-          </select>
-          <input type="number" step="0.001" placeholder="Cân VN (kg)" value={form.vnWeight} onChange={(e) => setForm({ ...form, vnWeight: Number(e.target.value) })} />
-          <input placeholder="Ghi chú" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-          <button className="btn" type="submit">Ghi cân + đối soát</button>
-        </div>
-      </form>
-      <table>
-        <thead><tr><th>Đơn</th><th>Cân JP</th><th>Cân VN</th><th>Chênh (kg)</th><th>Ghi chú</th></tr></thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id}><td>{r.orderId.slice(0, 8)}</td><td>{r.jpWeight}</td><td>{r.vnWeight}</td>
-              <td style={{ color: Number(r.diffKg) !== 0 ? "#dc2626" : undefined }}>{r.diffKg}</td><td>{r.note}</td></tr>
-          ))}
-          {rows.length === 0 && <tr><td colSpan={5}>Chưa có dữ liệu</td></tr>}
-        </tbody>
-      </table>
-    </div>
+    <Card title="Kho VN — Đối soát chênh cân">
+      <Form form={form} layout="inline" onFinish={submit} style={{ marginBottom: 16 }}>
+        <Form.Item name="orderId" rules={[{ required: true }]}>
+          <Select showSearch optionFilterProp="label" placeholder="Chọn đơn" style={{ width: 200 }} options={orders.map((o) => ({ value: o.id, label: o.code }))} />
+        </Form.Item>
+        <Form.Item name="vnWeight" rules={[{ required: true }]}>
+          <InputNumber min={0} step={0.001} placeholder="Cân VN (kg)" style={{ width: 160 }} />
+        </Form.Item>
+        <Form.Item name="note"><Input placeholder="Ghi chú" /></Form.Item>
+        <Form.Item><Button type="primary" htmlType="submit">Ghi cân</Button></Form.Item>
+      </Form>
+      <Table
+        rowKey="id" loading={loading} dataSource={rows} size="middle"
+        columns={[
+          { title: "Đơn", dataIndex: "orderId", render: (v) => v.slice(0, 8) },
+          { title: "Cân JP", dataIndex: "jpWeight" },
+          { title: "Cân VN", dataIndex: "vnWeight" },
+          { title: "Chênh (kg)", dataIndex: "diffKg", render: (v) => (Number(v) !== 0 ? <Tag color="error">{v}</Tag> : <Tag color="success">{v}</Tag>) },
+          { title: "Ghi chú", dataIndex: "note" },
+        ]}
+      />
+    </Card>
   );
 }

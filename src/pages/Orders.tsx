@@ -1,106 +1,136 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
+import {
+  Card, Table, Button, Modal, Form, Input, InputNumber, Select, Space, Tag,
+  Drawer, Descriptions, Divider, App,
+} from "antd";
+import { PlusOutlined, MinusCircleOutlined, EyeOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
+import { STATUS_LABEL, STATUS_COLOR, NEXT, vnd } from "../lib/status";
 
-interface Order {
-  id: string;
-  code: string;
-  status: string;
-  totalQuote: string | null;
-  customer?: { name: string };
-}
+interface Order { id: string; code: string; status: string; totalQuote: string | null; customer?: { name: string }; }
 interface Customer { id: string; name: string; }
-interface Item { name: string; qty: number; unitPriceJpy: number; }
-
-const NEXT: Record<string, string[]> = {
-  draft: ["quoted", "closed"], quoted: ["deposited", "closed"],
-  deposited: ["purchasing", "cancelled"], purchasing: ["purchased", "cancelled"],
-  purchased: ["jp_warehouse"], jp_warehouse: ["customs"], customs: ["tax_done"],
-  tax_done: ["vn_warehouse"], vn_warehouse: ["delivered"], delivered: ["completed"],
-};
 
 export default function Orders() {
   const { can } = usePermission();
+  const { message } = App.useApp();
   const [rows, setRows] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [customerId, setCustomerId] = useState("");
-  const [items, setItems] = useState<Item[]>([{ name: "", qty: 1, unitPriceJpy: 0 }]);
-  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<any | null>(null);
+  const [form] = Form.useForm();
 
-  const load = () => api.get<Order[]>("/orders").then((r) => setRows(r.data)).catch(() => setErr("Không tải được đơn"));
+  const load = () => { setLoading(true); api.get<Order[]>("/orders").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
   useEffect(() => {
     load();
     if (can("customers.list")) api.get<Customer[]>("/customers").then((r) => setCustomers(r.data)).catch(() => {});
   }, []);
 
-  function setItem(i: number, patch: Partial<Item>) {
-    setItems(items.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
-  }
-
-  async function createOrder(e: FormEvent) {
-    e.preventDefault();
-    setErr("");
-    try {
-      await api.post("/orders", { customerId, items: items.filter((i) => i.name) });
-      setItems([{ name: "", qty: 1, unitPriceJpy: 0 }]);
-      setCustomerId("");
-      load();
-    } catch {
-      setErr("Tạo đơn thất bại (chọn khách + ít nhất 1 món)");
-    }
+  async function create() {
+    const v = await form.validateFields();
+    try { await api.post("/orders", v); message.success("Đã tạo đơn"); setOpen(false); form.resetFields(); load(); }
+    catch { message.error("Tạo đơn thất bại"); }
   }
 
   async function changeStatus(id: string, status: string) {
-    try { await api.patch(`/orders/${id}/status`, { status }); load(); }
-    catch { setErr("Chuyển trạng thái không hợp lệ"); }
+    try { await api.patch(`/orders/${id}/status`, { status }); message.success("Đã chuyển trạng thái"); load(); }
+    catch { message.error("Chuyển trạng thái không hợp lệ"); }
+  }
+
+  async function openDetail(id: string) {
+    const r = await api.get(`/orders/${id}`);
+    setDetail(r.data);
+  }
+
+  async function downloadDoc(id: string, type: string) {
+    const r = await api.get(`/shipments/documents/${id}/download`, { responseType: "blob" });
+    const url = URL.createObjectURL(r.data as Blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = type; a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
-    <div>
-      <h2>Đơn hàng</h2>
-      {err && <p className="err">{err}</p>}
-
-      {can("orders.create") && (
-        <form className="panel" onSubmit={createOrder}>
-          <div className="row">
-            <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
-              <option value="">-- Chọn khách --</option>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          {items.map((it, i) => (
-            <div className="row" key={i}>
-              <input placeholder="Tên món" value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} />
-              <input type="number" min={1} style={{ width: 70 }} value={it.qty} onChange={(e) => setItem(i, { qty: Number(e.target.value) })} />
-              <input type="number" min={0} placeholder="Giá ¥" value={it.unitPriceJpy} onChange={(e) => setItem(i, { unitPriceJpy: Number(e.target.value) })} />
-            </div>
-          ))}
-          <div className="row">
-            <button type="button" className="btn gray sm" onClick={() => setItems([...items, { name: "", qty: 1, unitPriceJpy: 0 }])}>+ Thêm món</button>
-            <button type="submit" className="btn">Tạo đơn</button>
-          </div>
-        </form>
-      )}
-
-      <table>
-        <thead><tr><th>Mã</th><th>Khách</th><th>Trạng thái</th><th>Báo giá (¥)</th><th>Hành động</th></tr></thead>
-        <tbody>
-          {rows.map((o) => (
-            <tr key={o.id}>
-              <td>{o.code}</td>
-              <td>{o.customer?.name}</td>
-              <td><span className="badge">{o.status}</span></td>
-              <td>{o.totalQuote ?? "-"}</td>
-              <td>
+    <Card
+      title="Đơn hàng"
+      extra={can("orders.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Tạo đơn</Button>}
+    >
+      <Table
+        rowKey="id" loading={loading} dataSource={rows} size="middle"
+        columns={[
+          { title: "Mã", dataIndex: "code" },
+          { title: "Khách", dataIndex: ["customer", "name"] },
+          { title: "Trạng thái", dataIndex: "status", render: (v) => <Tag color={STATUS_COLOR[v]}>{STATUS_LABEL[v] ?? v}</Tag> },
+          { title: "Báo giá", dataIndex: "totalQuote", render: (v) => (v ? Number(v).toLocaleString() + " ¥" : "-") },
+          {
+            title: "Hành động", render: (_, o) => (
+              <Space wrap>
+                <Button size="small" icon={<EyeOutlined />} onClick={() => openDetail(o.id)}>Chi tiết</Button>
                 {can("orders.update_status") && (NEXT[o.status] ?? []).map((ns) => (
-                  <button key={ns} className="btn sm" style={{ marginRight: 4 }} onClick={() => changeStatus(o.id, ns)}>{ns}</button>
+                  <Button key={ns} size="small" type="dashed" onClick={() => changeStatus(o.id, ns)}>{STATUS_LABEL[ns] ?? ns}</Button>
                 ))}
-              </td>
-            </tr>
-          ))}
-          {rows.length === 0 && <tr><td colSpan={5}>Chưa có đơn</td></tr>}
-        </tbody>
-      </table>
-    </div>
+              </Space>
+            ),
+          },
+        ]}
+      />
+
+      <Modal title="Tạo đơn" open={open} onOk={create} onCancel={() => setOpen(false)} okText="Tạo" width={640}>
+        <Form form={form} layout="vertical" initialValues={{ items: [{ qty: 1, unitPriceJpy: 0 }] }}>
+          <Form.Item name="customerId" label="Khách hàng" rules={[{ required: true }]}>
+            <Select showSearch optionFilterProp="label" placeholder="Chọn khách"
+              options={customers.map((c) => ({ value: c.id, label: c.name }))} />
+          </Form.Item>
+          <Divider>Món hàng</Divider>
+          <Form.List name="items">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map(({ key, name, ...rest }) => (
+                  <Space key={key} align="baseline" style={{ display: "flex", marginBottom: 8 }}>
+                    <Form.Item {...rest} name={[name, "name"]} rules={[{ required: true }]}><Input placeholder="Tên món" /></Form.Item>
+                    <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true }]}><InputNumber min={1} placeholder="SL" /></Form.Item>
+                    <Form.Item {...rest} name={[name, "unitPriceJpy"]} rules={[{ required: true }]}><InputNumber min={0} placeholder="Giá ¥" /></Form.Item>
+                    <MinusCircleOutlined onClick={() => remove(name)} />
+                  </Space>
+                ))}
+                <Button type="dashed" onClick={() => add({ qty: 1, unitPriceJpy: 0 })} block icon={<PlusOutlined />}>Thêm món</Button>
+              </>
+            )}
+          </Form.List>
+        </Form>
+      </Modal>
+
+      <Drawer title={detail?.code} open={!!detail} onClose={() => setDetail(null)} width={520}>
+        {detail && (
+          <>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="Khách">{detail.customer?.name}</Descriptions.Item>
+              <Descriptions.Item label="Trạng thái"><Tag color={STATUS_COLOR[detail.status]}>{STATUS_LABEL[detail.status]}</Tag></Descriptions.Item>
+              <Descriptions.Item label="Báo giá">{detail.totalQuote ? Number(detail.totalQuote).toLocaleString() + " ¥" : "-"}</Descriptions.Item>
+              <Descriptions.Item label="Công nợ">{detail.debt ? vnd(detail.debt.balance) : "-"}</Descriptions.Item>
+            </Descriptions>
+            <Divider>Món hàng</Divider>
+            <Table rowKey="id" size="small" pagination={false} dataSource={detail.items}
+              columns={[{ title: "Tên", dataIndex: "name" }, { title: "SL", dataIndex: "qty" }, { title: "Giá ¥", dataIndex: "unitPriceJpy" }]} />
+            <Divider>Tracking</Divider>
+            <Table rowKey="id" size="small" pagination={false} dataSource={detail.trackings}
+              locale={{ emptyText: "Chưa có" }}
+              columns={[{ title: "Mã", dataIndex: "code" }, { title: "Tên JP", dataIndex: "jpName" }, { title: "Cân", dataIndex: "jpWeightKg" }]} />
+            <Divider>Thanh toán</Divider>
+            <Table rowKey="id" size="small" pagination={false} dataSource={detail.payments}
+              locale={{ emptyText: "Chưa có" }}
+              columns={[{ title: "Loại", dataIndex: "type" }, { title: "Số tiền", dataIndex: "amountVnd", render: (v) => vnd(v) }]} />
+            <Divider>Chứng từ</Divider>
+            <Table rowKey="id" size="small" pagination={false} dataSource={detail.documents}
+              locale={{ emptyText: "Chưa có" }}
+              columns={[
+                { title: "Loại", dataIndex: "type" },
+                { title: "", render: (_: any, d: any) => <a onClick={() => downloadDoc(d.id, d.type)}>Tải</a> },
+              ]} />
+          </>
+        )}
+      </Drawer>
+    </Card>
   );
 }

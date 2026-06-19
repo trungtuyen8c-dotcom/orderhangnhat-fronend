@@ -1,74 +1,79 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
+import { Card, Table, Button, Modal, Form, Input, Select, Upload, Tag, App, Space } from "antd";
+import { PlusOutlined, UploadOutlined } from "@ant-design/icons";
+import type { UploadFile } from "antd";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
 
 interface S { id: string; code: string; status: string; _count?: { trackings: number; documents: number }; }
-
 const DOC_TYPES = ["invoice", "packing", "ingredient", "purchase_invoice", "tax"];
 
 export default function Shipments() {
   const { can } = usePermission();
+  const { message } = App.useApp();
   const [rows, setRows] = useState<S[]>([]);
-  const [code, setCode] = useState("");
-  const [doc, setDoc] = useState({ type: "invoice", shipmentId: "", file: null as File | null });
-  const [err, setErr] = useState(""); const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [openS, setOpenS] = useState(false);
+  const [openD, setOpenD] = useState(false);
+  const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [sForm] = Form.useForm();
+  const [dForm] = Form.useForm();
 
-  const load = () => api.get<S[]>("/shipments").then((r) => setRows(r.data)).catch(() => setErr("Không tải được"));
+  const load = () => { setLoading(true); api.get<S[]>("/shipments").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
   useEffect(() => { load(); }, []);
 
-  async function create(e: FormEvent) {
-    e.preventDefault(); setErr("");
-    try { await api.post("/shipments", { code }); setCode(""); load(); }
-    catch { setErr("Tạo chuyến thất bại"); }
+  async function createShipment() {
+    const v = await sForm.validateFields();
+    try { await api.post("/shipments", v); message.success("Đã tạo chuyến"); setOpenS(false); sForm.resetFields(); load(); }
+    catch { message.error("Tạo chuyến thất bại"); }
   }
 
-  async function upload(e: FormEvent) {
-    e.preventDefault(); setErr(""); setMsg("");
-    if (!doc.file) return;
+  async function uploadDoc() {
+    const v = await dForm.validateFields();
+    const file = fileList[0]?.originFileObj;
+    if (!file) return message.error("Chọn file");
     const fd = new FormData();
-    fd.append("file", doc.file); fd.append("type", doc.type);
-    if (doc.shipmentId) fd.append("shipmentId", doc.shipmentId);
-    try { await api.post("/shipments/documents", fd); setMsg("Đã tải chứng từ"); load(); }
-    catch { setErr("Upload thất bại"); }
+    fd.append("file", file); fd.append("type", v.type);
+    if (v.shipmentId) fd.append("shipmentId", v.shipmentId);
+    try { await api.post("/shipments/documents", fd); message.success("Đã tải chứng từ"); setOpenD(false); dForm.resetFields(); setFileList([]); load(); }
+    catch { message.error("Upload thất bại"); }
   }
 
   return (
-    <div>
-      <h2>Chuyến & Chứng từ</h2>
-      {err && <p className="err">{err}</p>}
-      {msg && <p style={{ color: "green" }}>{msg}</p>}
-      {can("shipments.create") && (
-        <form className="panel" onSubmit={create}>
-          <div className="row">
-            <input placeholder="Mã chuyến *" value={code} onChange={(e) => setCode(e.target.value)} required />
-            <button className="btn" type="submit">Tạo chuyến</button>
-          </div>
-        </form>
-      )}
-      {can("shipments.upload_doc") && (
-        <form className="panel" onSubmit={upload}>
-          <div className="row">
-            <select value={doc.type} onChange={(e) => setDoc({ ...doc, type: e.target.value })}>
-              {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select value={doc.shipmentId} onChange={(e) => setDoc({ ...doc, shipmentId: e.target.value })}>
-              <option value="">-- Chuyến (tùy chọn) --</option>
-              {rows.map((s) => <option key={s.id} value={s.id}>{s.code}</option>)}
-            </select>
-            <input type="file" onChange={(e) => setDoc({ ...doc, file: e.target.files?.[0] ?? null })} />
-            <button className="btn" type="submit">Tải chứng từ GA</button>
-          </div>
-        </form>
-      )}
-      <table>
-        <thead><tr><th>Mã chuyến</th><th>Trạng thái</th><th>Tracking</th><th>Chứng từ</th></tr></thead>
-        <tbody>
-          {rows.map((s) => (
-            <tr key={s.id}><td>{s.code}</td><td><span className="badge">{s.status}</span></td><td>{s._count?.trackings ?? 0}</td><td>{s._count?.documents ?? 0}</td></tr>
-          ))}
-          {rows.length === 0 && <tr><td colSpan={4}>Chưa có chuyến</td></tr>}
-        </tbody>
-      </table>
-    </div>
+    <Card
+      title="Chuyến & Chứng từ"
+      extra={<Space>
+        {can("shipments.upload_doc") && <Button icon={<UploadOutlined />} onClick={() => setOpenD(true)}>Tải chứng từ GA</Button>}
+        {can("shipments.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpenS(true)}>Tạo chuyến</Button>}
+      </Space>}
+    >
+      <Table
+        rowKey="id" loading={loading} dataSource={rows} size="middle"
+        columns={[
+          { title: "Mã chuyến", dataIndex: "code" },
+          { title: "Trạng thái", dataIndex: "status", render: (v) => <Tag>{v}</Tag> },
+          { title: "Tracking", dataIndex: ["_count", "trackings"] },
+          { title: "Chứng từ", dataIndex: ["_count", "documents"] },
+        ]}
+      />
+
+      <Modal title="Tạo chuyến" open={openS} onOk={createShipment} onCancel={() => setOpenS(false)} okText="Lưu">
+        <Form form={sForm} layout="vertical"><Form.Item name="code" label="Mã chuyến" rules={[{ required: true }]}><Input /></Form.Item></Form>
+      </Modal>
+
+      <Modal title="Tải chứng từ GA" open={openD} onOk={uploadDoc} onCancel={() => setOpenD(false)} okText="Tải lên">
+        <Form form={dForm} layout="vertical" initialValues={{ type: "invoice" }}>
+          <Form.Item name="type" label="Loại chứng từ"><Select options={DOC_TYPES.map((t) => ({ value: t, label: t }))} /></Form.Item>
+          <Form.Item name="shipmentId" label="Chuyến (tùy chọn)">
+            <Select allowClear options={rows.map((s) => ({ value: s.id, label: s.code }))} />
+          </Form.Item>
+          <Form.Item label="File">
+            <Upload beforeUpload={() => false} fileList={fileList} onChange={(i) => setFileList(i.fileList.slice(-1))} maxCount={1}>
+              <Button icon={<UploadOutlined />}>Chọn file</Button>
+            </Upload>
+          </Form.Item>
+        </Form>
+      </Modal>
+    </Card>
   );
 }

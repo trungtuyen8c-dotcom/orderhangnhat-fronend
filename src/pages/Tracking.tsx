@@ -1,4 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
+import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Tag, App } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
 
@@ -7,64 +9,67 @@ interface Order { id: string; code: string; }
 
 export default function Tracking() {
   const { can } = usePermission();
+  const { message } = App.useApp();
   const [rows, setRows] = useState<T[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [form, setForm] = useState({ code: "", orderId: "", jpName: "", jpPriceJpy: 0 });
-  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [resolveT, setResolveT] = useState<T | null>(null);
+  const [form] = Form.useForm();
+  const [rForm] = Form.useForm();
 
-  const load = () => api.get<T[]>("/trackings").then((r) => setRows(r.data)).catch(() => setErr("Không tải được"));
+  const load = () => { setLoading(true); api.get<T[]>("/trackings").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
   useEffect(() => {
     load();
     if (can("orders.list")) api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
   }, []);
 
-  async function create(e: FormEvent) {
-    e.preventDefault(); setErr("");
-    try {
-      await api.post("/trackings", { code: form.code, orderId: form.orderId || undefined, jpName: form.jpName || undefined, jpPriceJpy: Number(form.jpPriceJpy) || undefined });
-      setForm({ code: "", orderId: "", jpName: "", jpPriceJpy: 0 }); load();
-    } catch { setErr("Tạo tracking thất bại"); }
+  async function create() {
+    const v = await form.validateFields();
+    try { await api.post("/trackings", v); message.success("Đã thêm tracking"); setOpen(false); form.resetFields(); load(); }
+    catch { message.error("Tạo tracking thất bại"); }
   }
 
-  async function resolve(id: string) {
-    const reason = prompt("Lý do xử lý tracking lạ:");
-    if (!reason) return;
-    const orderId = prompt("Gán vào orderId (để trống = giữ nguyên):") || undefined;
-    try { await api.post(`/trackings/${id}/resolve`, { reason, orderId }); load(); }
-    catch { setErr("Resolve thất bại"); }
+  async function resolve() {
+    const v = await rForm.validateFields();
+    try { await api.post(`/trackings/${resolveT!.id}/resolve`, v); message.success("Đã xử lý"); setResolveT(null); rForm.resetFields(); load(); }
+    catch { message.error("Xử lý thất bại"); }
   }
 
   return (
-    <div>
-      <h2>Tracking</h2>
-      {err && <p className="err">{err}</p>}
-      {can("trackings.create") && (
-        <form className="panel" onSubmit={create}>
-          <div className="row">
-            <input placeholder="Mã tracking *" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
-            <select value={form.orderId} onChange={(e) => setForm({ ...form, orderId: e.target.value })}>
-              <option value="">-- Gán đơn (tùy chọn) --</option>
-              {orders.map((o) => <option key={o.id} value={o.id}>{o.code}</option>)}
-            </select>
-            <input placeholder="Tên (JP)" value={form.jpName} onChange={(e) => setForm({ ...form, jpName: e.target.value })} />
-            <input type="number" placeholder="Giá ¥" value={form.jpPriceJpy} onChange={(e) => setForm({ ...form, jpPriceJpy: Number(e.target.value) })} />
-            <button className="btn" type="submit">Thêm tracking</button>
-          </div>
-        </form>
-      )}
-      <table>
-        <thead><tr><th>Mã</th><th>Đơn</th><th>Tên JP</th><th>Cân (kg)</th><th>Trạng thái</th><th></th></tr></thead>
-        <tbody>
-          {rows.map((t) => (
-            <tr key={t.id}>
-              <td>{t.code}</td><td>{t.orderId ? "✓" : "—"}</td><td>{t.jpName}</td><td>{t.jpWeightKg ?? "-"}</td>
-              <td><span className="badge">{t.status}</span></td>
-              <td>{can("trackings.resolve") && <button className="btn sm gray" onClick={() => resolve(t.id)}>Xử lý lạ</button>}</td>
-            </tr>
-          ))}
-          {rows.length === 0 && <tr><td colSpan={6}>Chưa có tracking</td></tr>}
-        </tbody>
-      </table>
-    </div>
+    <Card title="Tracking" extra={can("trackings.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Thêm tracking</Button>}>
+      <Table
+        rowKey="id" loading={loading} dataSource={rows} size="middle"
+        columns={[
+          { title: "Mã", dataIndex: "code" },
+          { title: "Đơn", dataIndex: "orderId", render: (v) => (v ? <Tag color="blue">đã gán</Tag> : <Tag>chưa</Tag>) },
+          { title: "Tên JP", dataIndex: "jpName" },
+          { title: "Cân (kg)", dataIndex: "jpWeightKg" },
+          { title: "Trạng thái", dataIndex: "status", render: (v) => <Tag>{v}</Tag> },
+          { title: "", render: (_, t) => can("trackings.resolve") && <Button size="small" onClick={() => setResolveT(t)}>Xử lý lạ</Button> },
+        ]}
+      />
+
+      <Modal title="Thêm tracking" open={open} onOk={create} onCancel={() => setOpen(false)} okText="Lưu">
+        <Form form={form} layout="vertical">
+          <Form.Item name="code" label="Mã tracking" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="orderId" label="Gán đơn (tùy chọn)">
+            <Select allowClear showSearch optionFilterProp="label" options={orders.map((o) => ({ value: o.id, label: o.code }))} />
+          </Form.Item>
+          <Form.Item name="jpName" label="Tên (JP)"><Input /></Form.Item>
+          <Form.Item name="jpPriceJpy" label="Giá ¥"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="Xử lý tracking lạ" open={!!resolveT} onOk={resolve} onCancel={() => setResolveT(null)} okText="Lưu">
+        <Form form={rForm} layout="vertical">
+          <Form.Item name="reason" label="Lý do" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
+          <Form.Item name="orderId" label="Gán lại đơn (tùy chọn)">
+            <Select allowClear showSearch optionFilterProp="label" options={orders.map((o) => ({ value: o.id, label: o.code }))} />
+          </Form.Item>
+          <Form.Item name="code" label="Sửa mã (tùy chọn)"><Input /></Form.Item>
+        </Form>
+      </Modal>
+    </Card>
   );
 }

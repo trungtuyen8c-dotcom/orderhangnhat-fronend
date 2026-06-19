@@ -1,94 +1,88 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
+import { Row, Col, Card, Statistic, Table, Form, Select, InputNumber, Button, Tag, App } from "antd";
 import { api } from "../api";
+import { vnd } from "../lib/status";
 
-interface Order { id: string; code: string; status: string; totalQuote: string | null; }
+interface Order { id: string; code: string; status: string; }
 interface Wallet { id: string; name: string; balance: string; }
 interface Txn { id: string; amount: string; type: string; reconciled: boolean; wallet?: { name: string }; }
-interface Payment { id: string; type: string; amountVnd: string; createdAt: string; }
-interface Debt { balance: string; }
 
 export default function Accounting() {
+  const { message } = App.useApp();
   const [orders, setOrders] = useState<Order[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [txns, setTxns] = useState<Txn[]>([]);
-  const [sel, setSel] = useState("");
-  const [pay, setPay] = useState({ type: "deposit", amountVnd: 0, walletId: "" });
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [debt, setDebt] = useState<Debt | null>(null);
-  const [err, setErr] = useState("");
+  const [debt, setDebt] = useState<string | null>(null);
+  const [form] = Form.useForm();
 
   const loadRecon = () => api.get<Txn[]>("/accounting/reconcile").then((r) => setTxns(r.data)).catch(() => {});
+  const loadWallets = () => api.get<Wallet[]>("/accounting/wallets").then((r) => setWallets(r.data)).catch(() => {});
   useEffect(() => {
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
-    api.get<Wallet[]>("/accounting/wallets").then((r) => setWallets(r.data)).catch(() => {});
-    loadRecon();
+    loadWallets(); loadRecon();
   }, []);
 
-  function selectOrder(id: string) {
-    setSel(id);
-    if (id) api.get<{ payments: Payment[]; debt: Debt | null }>(`/accounting/orders/${id}/payments`).then((r) => { setPayments(r.data.payments); setDebt(r.data.debt); }).catch(() => {});
+  async function onOrderChange(id: string) {
+    if (!id) return setDebt(null);
+    const r = await api.get(`/accounting/orders/${id}/payments`);
+    setDebt(r.data.debt ? r.data.debt.balance : null);
   }
 
-  async function record(e: FormEvent) {
-    e.preventDefault(); setErr("");
+  async function record() {
+    const v = await form.validateFields();
     try {
-      await api.post(`/accounting/orders/${sel}/payments`, { type: pay.type, amountVnd: Number(pay.amountVnd), walletId: pay.walletId || undefined });
-      setPay({ type: "deposit", amountVnd: 0, walletId: "" }); selectOrder(sel); loadRecon();
-    } catch { setErr("Ghi tiền thất bại"); }
+      await api.post(`/accounting/orders/${v.orderId}/payments`, { type: v.type, amountVnd: v.amountVnd, walletId: v.walletId });
+      message.success("Đã ghi"); form.resetFields(); setDebt(null); loadWallets(); loadRecon();
+    } catch { message.error("Ghi tiền thất bại (kiểm tra quyền hoàn tiền?)"); }
   }
 
   async function reconcile(id: string) {
-    const ref = prompt("Mã sao kê (statement ref):") || undefined;
-    try { await api.post(`/accounting/wallet-txns/${id}/reconcile`, { statementRef: ref }); loadRecon(); }
-    catch { setErr("Đối soát thất bại"); }
+    try { await api.post(`/accounting/wallet-txns/${id}/reconcile`, {}); message.success("Đã đối soát"); loadRecon(); }
+    catch { message.error("Đối soát thất bại"); }
   }
 
   return (
     <div>
-      <h2>Kế toán</h2>
-      {err && <p className="err">{err}</p>}
-
-      <div className="cards">
+      <Row gutter={16} className="stat-cards">
         {wallets.map((w) => (
-          <div className="card" key={w.id}><div className="num">{Number(w.balance).toLocaleString()}</div><div className="label">{w.name}</div></div>
+          <Col xs={12} md={8} key={w.id}><Card><Statistic title={w.name} value={Number(w.balance)} suffix="₫" /></Card></Col>
         ))}
-      </div>
+      </Row>
 
-      <div className="panel">
-        <h3>Ghi cọc / thu nốt / hoàn</h3>
-        <form onSubmit={record}>
-          <div className="row">
-            <select value={sel} onChange={(e) => selectOrder(e.target.value)} required>
-              <option value="">-- Chọn đơn --</option>
-              {orders.map((o) => <option key={o.id} value={o.id}>{o.code} ({o.status})</option>)}
-            </select>
-            <select value={pay.type} onChange={(e) => setPay({ ...pay, type: e.target.value })}>
-              <option value="deposit">Cọc</option><option value="final">Thu nốt</option><option value="refund">Hoàn</option>
-            </select>
-            <input type="number" placeholder="Số tiền (VND)" value={pay.amountVnd} onChange={(e) => setPay({ ...pay, amountVnd: Number(e.target.value) })} />
-            <select value={pay.walletId} onChange={(e) => setPay({ ...pay, walletId: e.target.value })}>
-              <option value="">-- Ví (tùy chọn) --</option>
-              {wallets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
-            <button className="btn" type="submit" disabled={!sel}>Ghi</button>
-          </div>
-        </form>
-        {sel && (
-          <p>Công nợ còn lại: <b>{debt ? Number(debt.balance).toLocaleString() : "-"}</b> VND — Lịch sử: {payments.map((p) => `${p.type} ${Number(p.amountVnd).toLocaleString()}`).join(", ") || "chưa có"}</p>
-        )}
-      </div>
+      <Card title="Ghi cọc / thu nốt / hoàn" style={{ marginBottom: 16 }}>
+        <Form form={form} layout="inline" onFinish={record}>
+          <Form.Item name="orderId" rules={[{ required: true }]}>
+            <Select showSearch optionFilterProp="label" placeholder="Chọn đơn" style={{ width: 200 }}
+              onChange={onOrderChange} options={orders.map((o) => ({ value: o.id, label: o.code }))} />
+          </Form.Item>
+          <Form.Item name="type" initialValue="deposit">
+            <Select style={{ width: 130 }} options={[
+              { value: "deposit", label: "Cọc" }, { value: "final", label: "Thu nốt" }, { value: "refund", label: "Hoàn" },
+            ]} />
+          </Form.Item>
+          <Form.Item name="amountVnd" rules={[{ required: true }]}>
+            <InputNumber min={1} placeholder="Số tiền" style={{ width: 160 }} formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} />
+          </Form.Item>
+          <Form.Item name="walletId">
+            <Select allowClear placeholder="Ví (tùy chọn)" style={{ width: 150 }} options={wallets.map((w) => ({ value: w.id, label: w.name }))} />
+          </Form.Item>
+          <Form.Item><Button type="primary" htmlType="submit">Ghi</Button></Form.Item>
+        </Form>
+        {debt !== null && <p style={{ marginTop: 12 }}>Công nợ còn lại: <b>{vnd(debt)}</b></p>}
+      </Card>
 
-      <h3>Đối soát ví (giao dịch chưa đối soát)</h3>
-      <table>
-        <thead><tr><th>Ví</th><th>Số tiền</th><th>Loại</th><th></th></tr></thead>
-        <tbody>
-          {txns.map((t) => (
-            <tr key={t.id}><td>{t.wallet?.name}</td><td>{Number(t.amount).toLocaleString()}</td><td>{t.type}</td>
-              <td><button className="btn sm" onClick={() => reconcile(t.id)}>Đối soát</button></td></tr>
-          ))}
-          {txns.length === 0 && <tr><td colSpan={4}>Không có giao dịch chờ</td></tr>}
-        </tbody>
-      </table>
+      <Card title="Đối soát ví — giao dịch chưa đối soát">
+        <Table
+          rowKey="id" dataSource={txns} size="middle"
+          columns={[
+            { title: "Ví", dataIndex: ["wallet", "name"] },
+            { title: "Số tiền", dataIndex: "amount", render: (v) => vnd(v) },
+            { title: "Loại", dataIndex: "type", render: (v) => <Tag>{v}</Tag> },
+            { title: "", render: (_, t) => <Button size="small" onClick={() => reconcile(t.id)}>Đối soát</Button> },
+          ]}
+          locale={{ emptyText: "Không có giao dịch chờ" }}
+        />
+      </Card>
     </div>
   );
 }
