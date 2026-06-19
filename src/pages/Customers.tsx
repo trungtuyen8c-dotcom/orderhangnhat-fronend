@@ -3,6 +3,7 @@ import { Card, Table, Button, Modal, Form, Input, App } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
+import { PageContainer } from "../components/PageContainer";
 
 interface Customer { id: string; name: string; fbZalo?: string | null; phone?: string | null; note?: string | null; }
 
@@ -24,10 +25,11 @@ export default function Customers() {
   }
 
   return (
-    <Card
-      title="Khách hàng"
+    <PageContainer
+      title="Khách hàng" sub="Quản lý khách đặt hàng"
       extra={can("customers.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Thêm khách</Button>}
     >
+      <Card>
       <Table
         rowKey="id" loading={loading} dataSource={rows} size="middle"
         columns={[
@@ -45,6 +47,7 @@ export default function Customers() {
           <Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item>
         </Form>
       </Modal>
-    </Card>
+      </Card>
+    </PageContainer>
   );
 }

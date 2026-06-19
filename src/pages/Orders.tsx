@@ -6,6 +6,7 @@ import {
 import { PlusOutlined, MinusCircleOutlined, EyeOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
+import { PageContainer } from "../components/PageContainer";
 import { STATUS_LABEL, STATUS_COLOR, NEXT, vnd } from "../lib/status";
 
 interface Order { id: string; code: string; status: string; totalQuote: string | null; customer?: { name: string }; }
@@ -52,10 +53,11 @@ export default function Orders() {
   }
 
   return (
-    <Card
-      title="Đơn hàng"
+    <PageContainer
+      title="Đơn hàng" sub="Tạo đơn, báo giá và theo dõi vòng đời"
       extra={can("orders.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Tạo đơn</Button>}
     >
+      <Card>
       <Table
         rowKey="id" loading={loading} dataSource={rows} size="middle"
         columns={[
@@ -131,6 +133,7 @@ export default function Orders() {
           </>
         )}
       </Drawer>
-    </Card>
+      </Card>
+    </PageContainer>
   );
 }

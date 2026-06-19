@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Tag, App } from "antd";
 import { api } from "../api";
+import { PageContainer } from "../components/PageContainer";
 
 interface T { id: string; code: string; jpName: string | null; jpPriceJpy: string | null; jpWeightKg: string | null; shipmentId: string | null; status: string; }
 interface Shipment { id: string; code: string; }
@@ -34,7 +35,8 @@ export default function WarehouseJp() {
   }
 
   return (
-    <Card title="Kho Nhật — Quét tracking, cân, gán chuyến">
+    <PageContainer title="Kho Nhật" sub="Quét tracking, cập nhật tên/giá/cân, gán chuyến">
+      <Card>
       <Table
         rowKey="id" loading={loading} dataSource={rows} size="middle"
         columns={[
@@ -56,6 +58,7 @@ export default function WarehouseJp() {
           </Form.Item>
         </Form>
       </Modal>
-    </Card>
+      </Card>
+    </PageContainer>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Row, Col, Card, Statistic, Table, Form, Select, InputNumber, Button, Tag, App } from "antd";
 import { api } from "../api";
+import { PageContainer } from "../components/PageContainer";
 import { vnd } from "../lib/status";
 
 interface Order { id: string; code: string; status: string; }
@@ -42,7 +43,7 @@ export default function Accounting() {
   }
 
   return (
-    <div>
+    <PageContainer title="Kế toán" sub="Cọc, công nợ, ví và đối soát">
       <Row gutter={16} className="stat-cards">
         {wallets.map((w) => (
           <Col xs={12} md={8} key={w.id}><Card><Statistic title={w.name} value={Number(w.balance)} suffix="₫" /></Card></Col>
@@ -83,6 +84,6 @@ export default function Accounting() {
           locale={{ emptyText: "Không có giao dịch chờ" }}
         />
       </Card>
-    </div>
+    </PageContainer>
   );
 }

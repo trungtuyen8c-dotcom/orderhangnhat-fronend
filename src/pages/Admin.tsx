@@ -3,6 +3,7 @@ import { Card, Tabs, Table, Button, Modal, Form, Input, Select, Tag, App } from 
 import { PlusOutlined, DownloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
+import { PageContainer } from "../components/PageContainer";
 
 interface User { id: string; email: string; fullName: string | null; isActive: boolean; roles: string[]; }
 interface Role { key: string; name: string; }
@@ -82,7 +83,8 @@ export default function Admin() {
   });
 
   return (
-    <Card title="Quản trị">
+    <PageContainer title="Quản trị" sub="Người dùng, vai trò và nhật ký hệ thống">
+      <Card>
       <Tabs items={tabs} />
 
       <Modal title="Tạo user" open={openCreate} onOk={createUser} onCancel={() => setOpenCreate(false)} okText="Tạo">
@@ -99,6 +101,7 @@ export default function Admin() {
           <Form.Item name="roleKeys" label="Vai trò"><Select mode="multiple" options={roleOpts} /></Form.Item>
         </Form>
       </Modal>
-    </Card>
+      </Card>
+    </PageContainer>
   );
 }

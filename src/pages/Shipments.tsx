@@ -4,6 +4,7 @@ import { PlusOutlined, UploadOutlined } from "@ant-design/icons";
 import type { UploadFile } from "antd";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
+import { PageContainer } from "../components/PageContainer";
 
 interface S { id: string; code: string; status: string; _count?: { trackings: number; documents: number }; }
 const DOC_TYPES = ["invoice", "packing", "ingredient", "purchase_invoice", "tax"];
@@ -40,13 +41,14 @@ export default function Shipments() {
   }
 
   return (
-    <Card
-      title="Chuyến & Chứng từ"
+    <PageContainer
+      title="Chuyến & Chứng từ" sub="Gom chuyến và quản lý bộ chứng từ GA"
       extra={<Space>
         {can("shipments.upload_doc") && <Button icon={<UploadOutlined />} onClick={() => setOpenD(true)}>Tải chứng từ GA</Button>}
         {can("shipments.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpenS(true)}>Tạo chuyến</Button>}
       </Space>}
     >
+      <Card>
       <Table
         rowKey="id" loading={loading} dataSource={rows} size="middle"
         columns={[
@@ -74,6 +76,7 @@ export default function Shipments() {
           </Form.Item>
         </Form>
       </Modal>
-    </Card>
+      </Card>
+    </PageContainer>
   );
 }

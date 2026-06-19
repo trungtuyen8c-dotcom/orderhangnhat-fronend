@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, Table, Form, Select, InputNumber, Input, Button, Tag, App } from "antd";
 import { api } from "../api";
+import { PageContainer } from "../components/PageContainer";
 
 interface Order { id: string; code: string; }
 interface Recon { id: string; orderId: string; jpWeight: string | null; vnWeight: string | null; diffKg: string | null; note: string | null; }
@@ -25,7 +26,8 @@ export default function Warehouse() {
   }
 
   return (
-    <Card title="Kho VN — Đối soát chênh cân">
+    <PageContainer title="Kho VN" sub="Cân thực tế và đối soát chênh cân">
+      <Card>
       <Form form={form} layout="inline" onFinish={submit} style={{ marginBottom: 16 }}>
         <Form.Item name="orderId" rules={[{ required: true }]}>
           <Select showSearch optionFilterProp="label" placeholder="Chọn đơn" style={{ width: 200 }} options={orders.map((o) => ({ value: o.id, label: o.code }))} />
@@ -46,6 +48,7 @@ export default function Warehouse() {
           { title: "Ghi chú", dataIndex: "note" },
         ]}
       />
-    </Card>
+      </Card>
+    </PageContainer>
   );
 }

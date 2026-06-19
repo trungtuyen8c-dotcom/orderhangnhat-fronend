@@ -24,19 +24,22 @@ export default function Login() {
 
   return (
     <div className="login-bg">
-      <Card style={{ width: 380, boxShadow: "0 10px 40px rgba(0,0,0,.2)" }}>
-        <div style={{ textAlign: "center", marginBottom: 20 }}>
+      <Card className="login-card" variant="borderless">
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div className="login-logo">日</div>
           <Typography.Title level={3} style={{ marginBottom: 0 }}>Order Hàng Nhật</Typography.Title>
-          <Typography.Text type="secondary">Hệ thống quản trị</Typography.Text>
+          <Typography.Text type="secondary">Hệ thống quản trị vận hành</Typography.Text>
         </div>
-        <Form layout="vertical" initialValues={{ email: "admin@orderhn.local" }} onFinish={onFinish}>
+        <Form layout="vertical" size="large" initialValues={{ email: "admin@orderhn.local" }} onFinish={onFinish}>
           <Form.Item name="email" label="Email" rules={[{ required: true, type: "email" }]}>
-            <Input prefix={<UserOutlined />} placeholder="Email" size="large" />
+            <Input prefix={<UserOutlined style={{ color: "#94a3b8" }} />} placeholder="Email" />
           </Form.Item>
           <Form.Item name="password" label="Mật khẩu" rules={[{ required: true }]}>
-            <Input.Password prefix={<LockOutlined />} placeholder="Mật khẩu" size="large" />
+            <Input.Password prefix={<LockOutlined style={{ color: "#94a3b8" }} />} placeholder="Mật khẩu" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block size="large" loading={loading}>Đăng nhập</Button>
+          <Button type="primary" htmlType="submit" block size="large" loading={loading} style={{ height: 44, fontWeight: 600 }}>
+            Đăng nhập
+          </Button>
         </Form>
       </Card>
     </div>

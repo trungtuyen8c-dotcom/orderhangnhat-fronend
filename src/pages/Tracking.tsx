@@ -3,6 +3,7 @@ import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Tag, App 
 import { PlusOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
+import { PageContainer } from "../components/PageContainer";
 
 interface T { id: string; code: string; orderId: string | null; jpName: string | null; jpWeightKg: string | null; status: string; }
 interface Order { id: string; code: string; }
@@ -37,7 +38,9 @@ export default function Tracking() {
   }
 
   return (
-    <Card title="Tracking" extra={can("trackings.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Thêm tracking</Button>}>
+    <PageContainer title="Tracking" sub="Mã vận đơn và xử lý tracking lạ"
+      extra={can("trackings.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Thêm tracking</Button>}>
+      <Card>
       <Table
         rowKey="id" loading={loading} dataSource={rows} size="middle"
         columns={[
@@ -70,6 +73,7 @@ export default function Tracking() {
           <Form.Item name="code" label="Sửa mã (tùy chọn)"><Input /></Form.Item>
         </Form>
       </Modal>
-    </Card>
+      </Card>
+    </PageContainer>
   );
 }
