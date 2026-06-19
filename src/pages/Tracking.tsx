@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Tag, App } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Tag, Space, Popconfirm, App } from "antd";
+import { PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
@@ -37,6 +37,11 @@ export default function Tracking() {
     catch { message.error("Xử lý thất bại"); }
   }
 
+  async function del(id: string) {
+    try { await api.delete(`/trackings/${id}`); message.success("Đã xóa"); load(); }
+    catch { message.error("Xóa thất bại"); }
+  }
+
   return (
     <PageContainer title="Tracking" sub="Mã vận đơn và xử lý tracking lạ"
       extra={can("trackings.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Thêm tracking</Button>}>
@@ -49,7 +54,14 @@ export default function Tracking() {
           { title: "Tên JP", dataIndex: "jpName" },
           { title: "Cân (kg)", dataIndex: "jpWeightKg" },
           { title: "Trạng thái", dataIndex: "status", render: (v) => <Tag>{v}</Tag> },
-          { title: "", render: (_, t) => can("trackings.resolve") && <Button size="small" onClick={() => setResolveT(t)}>Xử lý lạ</Button> },
+          {
+            title: "", width: 160, render: (_, t) => (
+              <Space>
+                {can("trackings.resolve") && <Button size="small" onClick={() => setResolveT(t)}>Xử lý lạ</Button>}
+                {can("trackings.delete") && <Popconfirm title="Xóa tracking?" onConfirm={() => del(t.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>}
+              </Space>
+            ),
+          },
         ]}
       />
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Card, Table, Button, Modal, Form, Input, Select, Upload, Tag, App, Space } from "antd";
-import { PlusOutlined, UploadOutlined } from "@ant-design/icons";
+import { Card, Table, Button, Modal, Form, Input, Select, Upload, Tag, App, Space, Popconfirm } from "antd";
+import { PlusOutlined, UploadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { UploadFile } from "antd";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
@@ -17,8 +17,10 @@ export default function Shipments() {
   const [openS, setOpenS] = useState(false);
   const [openD, setOpenD] = useState(false);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [editShip, setEditShip] = useState<S | null>(null);
   const [sForm] = Form.useForm();
   const [dForm] = Form.useForm();
+  const [eForm] = Form.useForm();
 
   const load = () => { setLoading(true); api.get<S[]>("/shipments").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
   useEffect(() => { load(); }, []);
@@ -40,6 +42,17 @@ export default function Shipments() {
     catch { message.error("Upload thất bại"); }
   }
 
+  function openEdit(s: S) { setEditShip(s); eForm.setFieldsValue({ code: s.code, status: s.status }); }
+  async function saveEdit() {
+    const v = await eForm.validateFields();
+    try { await api.patch(`/shipments/${editShip!.id}`, v); message.success("Đã lưu"); setEditShip(null); load(); }
+    catch { message.error("Lưu thất bại"); }
+  }
+  async function del(id: string) {
+    try { await api.delete(`/shipments/${id}`); message.success("Đã xóa"); load(); }
+    catch (e: any) { message.error(e?.response?.data?.message ?? "Xóa thất bại"); }
+  }
+
   return (
     <PageContainer
       title="Chuyến & Chứng từ" sub="Gom chuyến và quản lý bộ chứng từ GA"
@@ -56,11 +69,26 @@ export default function Shipments() {
           { title: "Trạng thái", dataIndex: "status", render: (v) => <Tag>{v}</Tag> },
           { title: "Tracking", dataIndex: ["_count", "trackings"] },
           { title: "Chứng từ", dataIndex: ["_count", "documents"] },
+          {
+            title: "", width: 110, render: (_, s) => (
+              <Space>
+                {can("shipments.update") && <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(s)} />}
+                {can("shipments.delete") && <Popconfirm title="Xóa chuyến?" onConfirm={() => del(s.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>}
+              </Space>
+            ),
+          },
         ]}
       />
 
       <Modal title="Tạo chuyến" open={openS} onOk={createShipment} onCancel={() => setOpenS(false)} okText="Lưu">
         <Form form={sForm} layout="vertical"><Form.Item name="code" label="Mã chuyến" rules={[{ required: true }]}><Input /></Form.Item></Form>
+      </Modal>
+
+      <Modal title="Sửa chuyến" open={!!editShip} onOk={saveEdit} onCancel={() => setEditShip(null)} okText="Lưu">
+        <Form form={eForm} layout="vertical">
+          <Form.Item name="code" label="Mã chuyến" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="status" label="Trạng thái"><Select options={["open", "departed", "arrived", "closed"].map((s) => ({ value: s, label: s }))} /></Form.Item>
+        </Form>
       </Modal>
 
       <Modal title="Tải chứng từ GA" open={openD} onOk={uploadDoc} onCancel={() => setOpenD(false)} okText="Tải lên">

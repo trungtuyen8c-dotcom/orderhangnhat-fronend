@@ -3,7 +3,8 @@ import {
   Card, Table, Button, Modal, Form, Input, InputNumber, Select, Space, Tag,
   Drawer, Descriptions, Divider, App,
 } from "antd";
-import { PlusOutlined, MinusCircleOutlined, EyeOutlined } from "@ant-design/icons";
+import { PlusOutlined, MinusCircleOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Popconfirm } from "antd";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
@@ -19,6 +20,7 @@ export default function Orders() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any | null>(null);
   const [form] = Form.useForm();
 
@@ -28,10 +30,27 @@ export default function Orders() {
     if (can("customers.list")) api.get<Customer[]>("/customers").then((r) => setCustomers(r.data)).catch(() => {});
   }, []);
 
-  async function create() {
+  function openCreate() { setEditId(null); form.resetFields(); form.setFieldsValue({ items: [{ qty: 1, unitPriceJpy: 0 }] }); setOpen(true); }
+
+  async function openEdit(id: string) {
+    const r = await api.get(`/orders/${id}`);
+    setEditId(id);
+    form.setFieldsValue({ customerId: r.data.customerId, items: r.data.items.map((i: any) => ({ name: i.name, qty: i.qty, unitPriceJpy: Number(i.unitPriceJpy) })) });
+    setOpen(true);
+  }
+
+  async function submitOrder() {
     const v = await form.validateFields();
-    try { await api.post("/orders", v); message.success("Đã tạo đơn"); setOpen(false); form.resetFields(); load(); }
-    catch { message.error("Tạo đơn thất bại"); }
+    try {
+      if (editId) await api.patch(`/orders/${editId}`, v);
+      else await api.post("/orders", v);
+      message.success("Đã lưu đơn"); setOpen(false); form.resetFields(); load();
+    } catch (e: any) { message.error(e?.response?.data?.message ?? "Lưu đơn thất bại"); }
+  }
+
+  async function del(id: string) {
+    try { await api.delete(`/orders/${id}`); message.success("Đã xóa đơn"); load(); }
+    catch (e: any) { message.error(e?.response?.data?.message ?? "Xóa thất bại"); }
   }
 
   async function changeStatus(id: string, status: string) {
@@ -55,7 +74,7 @@ export default function Orders() {
   return (
     <PageContainer
       title="Đơn hàng" sub="Tạo đơn, báo giá và theo dõi vòng đời"
-      extra={can("orders.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Tạo đơn</Button>}
+      extra={can("orders.create") && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Tạo đơn</Button>}
     >
       <Card>
       <Table
@@ -69,17 +88,19 @@ export default function Orders() {
             title: "Hành động", render: (_, o) => (
               <Space wrap>
                 <Button size="small" icon={<EyeOutlined />} onClick={() => openDetail(o.id)}>Chi tiết</Button>
+                {can("orders.update") && ["draft", "quoted"].includes(o.status) && <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(o.id)} />}
                 {can("orders.update_status") && (NEXT[o.status] ?? []).map((ns) => (
                   <Button key={ns} size="small" type="dashed" onClick={() => changeStatus(o.id, ns)}>{STATUS_LABEL[ns] ?? ns}</Button>
                 ))}
+                {can("orders.delete") && <Popconfirm title="Xóa đơn này?" onConfirm={() => del(o.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>}
               </Space>
             ),
           },
         ]}
       />
 
-      <Modal title="Tạo đơn" open={open} onOk={create} onCancel={() => setOpen(false)} okText="Tạo" width={640}>
-        <Form form={form} layout="vertical" initialValues={{ items: [{ qty: 1, unitPriceJpy: 0 }] }}>
+      <Modal title={editId ? "Sửa đơn" : "Tạo đơn"} open={open} onOk={submitOrder} onCancel={() => { setOpen(false); setEditId(null); }} okText="Lưu" width={640}>
+        <Form form={form} layout="vertical">
           <Form.Item name="customerId" label="Khách hàng" rules={[{ required: true }]}>
             <Select showSearch optionFilterProp="label" placeholder="Chọn khách"
               options={customers.map((c) => ({ value: c.id, label: c.name }))} />

@@ -1,20 +1,25 @@
 import { useEffect, useState } from "react";
-import { Row, Col, Card, Statistic, Table, Form, Select, InputNumber, Button, Tag, App } from "antd";
+import { Row, Col, Card, Statistic, Table, Form, Select, InputNumber, Input, Button, Tag, Space, Popconfirm, Modal, App } from "antd";
+import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { api } from "../api";
+import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
 import { vnd } from "../lib/status";
 
 interface Order { id: string; code: string; status: string; }
-interface Wallet { id: string; name: string; balance: string; }
+interface Wallet { id: string; name: string; balance: string; currency?: string; }
 interface Txn { id: string; amount: string; type: string; reconciled: boolean; wallet?: { name: string }; }
 
 export default function Accounting() {
+  const { can } = usePermission();
   const { message } = App.useApp();
   const [orders, setOrders] = useState<Order[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [txns, setTxns] = useState<Txn[]>([]);
   const [debt, setDebt] = useState<string | null>(null);
+  const [walletModal, setWalletModal] = useState<{ mode: "create" | "edit"; w?: Wallet } | null>(null);
   const [form] = Form.useForm();
+  const [wForm] = Form.useForm();
 
   const loadRecon = () => api.get<Txn[]>("/accounting/reconcile").then((r) => setTxns(r.data)).catch(() => {});
   const loadWallets = () => api.get<Wallet[]>("/accounting/wallets").then((r) => setWallets(r.data)).catch(() => {});
@@ -42,6 +47,23 @@ export default function Accounting() {
     catch { message.error("Đối soát thất bại"); }
   }
 
+  function openWallet(mode: "create" | "edit", w?: Wallet) {
+    setWalletModal({ mode, w });
+    if (mode === "edit" && w) wForm.setFieldsValue({ name: w.name, currency: w.currency }); else wForm.resetFields();
+  }
+  async function submitWallet() {
+    const v = await wForm.validateFields();
+    try {
+      if (walletModal!.mode === "create") await api.post("/accounting/wallets", v);
+      else await api.patch(`/accounting/wallets/${walletModal!.w!.id}`, v);
+      message.success("Đã lưu ví"); setWalletModal(null); loadWallets();
+    } catch (e: any) { message.error(e?.response?.data?.message ?? "Lưu ví thất bại"); }
+  }
+  async function delWallet(id: string) {
+    try { await api.delete(`/accounting/wallets/${id}`); message.success("Đã xóa ví"); loadWallets(); }
+    catch (e: any) { message.error(e?.response?.data?.message ?? "Xóa thất bại"); }
+  }
+
   return (
     <PageContainer title="Kế toán" sub="Cọc, công nợ, ví và đối soát">
       <Row gutter={16} className="stat-cards">
@@ -49,6 +71,25 @@ export default function Accounting() {
           <Col xs={12} md={8} key={w.id}><Card><Statistic title={w.name} value={Number(w.balance)} suffix="₫" /></Card></Col>
         ))}
       </Row>
+
+      {can("wallets.manage") && (
+        <Card title="Quản lý ví" style={{ marginBottom: 16 }}
+          extra={<Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => openWallet("create")}>Thêm ví</Button>}>
+          <Table rowKey="id" size="small" pagination={false} dataSource={wallets}
+            columns={[
+              { title: "Tên ví", dataIndex: "name" },
+              { title: "Số dư", dataIndex: "balance", render: (v) => vnd(v) },
+              {
+                title: "", width: 110, render: (_, w) => (
+                  <Space>
+                    <Button size="small" icon={<EditOutlined />} onClick={() => openWallet("edit", w)} />
+                    <Popconfirm title="Xóa ví?" onConfirm={() => delWallet(w.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
+                  </Space>
+                ),
+              },
+            ]} />
+        </Card>
+      )}
 
       <Card title="Ghi cọc / thu nốt / hoàn" style={{ marginBottom: 16 }}>
         <Form form={form} layout="inline" onFinish={record}>
@@ -84,6 +125,13 @@ export default function Accounting() {
           locale={{ emptyText: "Không có giao dịch chờ" }}
         />
       </Card>
+
+      <Modal title={walletModal?.mode === "create" ? "Thêm ví" : "Sửa ví"} open={!!walletModal} onOk={submitWallet} onCancel={() => setWalletModal(null)} okText="Lưu">
+        <Form form={wForm} layout="vertical" initialValues={{ currency: "VND" }}>
+          <Form.Item name="name" label="Tên ví" rules={[{ required: true }]}><Input placeholder="vd: 4356 GLOBAL" /></Form.Item>
+          <Form.Item name="currency" label="Tiền tệ"><Input /></Form.Item>
+        </Form>
+      </Modal>
     </PageContainer>
   );
 }
