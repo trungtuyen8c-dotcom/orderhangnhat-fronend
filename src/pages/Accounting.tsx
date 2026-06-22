@@ -9,6 +9,7 @@ import { vnd } from "../lib/status";
 interface Order { id: string; code: string; status: string; }
 interface Wallet { id: string; name: string; balance: string; currency?: string; }
 interface Txn { id: string; amount: string; type: string; reconciled: boolean; wallet?: { name: string }; }
+interface CustomerDebt { customerId: string; code: string; name: string; phone: string | null; balance: number; updatedAt: string; }
 
 export default function Accounting() {
   const { can } = usePermission();
@@ -17,15 +18,17 @@ export default function Accounting() {
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [txns, setTxns] = useState<Txn[]>([]);
   const [debt, setDebt] = useState<string | null>(null);
+  const [custDebts, setCustDebts] = useState<CustomerDebt[]>([]);
   const [walletModal, setWalletModal] = useState<{ mode: "create" | "edit"; w?: Wallet } | null>(null);
   const [form] = Form.useForm();
   const [wForm] = Form.useForm();
 
   const loadRecon = () => api.get<Txn[]>("/accounting/reconcile").then((r) => setTxns(r.data)).catch(() => {});
   const loadWallets = () => api.get<Wallet[]>("/accounting/wallets").then((r) => setWallets(r.data)).catch(() => {});
+  const loadDebts = () => api.get<CustomerDebt[]>("/accounting/debts").then((r) => setCustDebts(r.data)).catch(() => {});
   useEffect(() => {
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
-    loadWallets(); loadRecon();
+    loadWallets(); loadRecon(); loadDebts();
   }, []);
 
   async function onOrderChange(id: string) {
@@ -38,7 +41,7 @@ export default function Accounting() {
     const v = await form.validateFields();
     try {
       await api.post(`/accounting/orders/${v.orderId}/payments`, { type: v.type, amountVnd: v.amountVnd, walletId: v.walletId });
-      message.success("Đã ghi"); form.resetFields(); setDebt(null); loadWallets(); loadRecon();
+      message.success("Đã ghi"); form.resetFields(); setDebt(null); loadWallets(); loadRecon(); loadDebts();
     } catch { message.error("Ghi tiền thất bại (kiểm tra quyền hoàn tiền?)"); }
   }
 
@@ -111,6 +114,21 @@ export default function Accounting() {
           <Form.Item><Button type="primary" htmlType="submit">Ghi</Button></Form.Item>
         </Form>
         {debt !== null && <p style={{ marginTop: 12 }}>Công nợ còn lại: <b>{vnd(debt)}</b></p>}
+      </Card>
+
+      <Card title="Công nợ khách hàng" style={{ marginBottom: 16 }}
+        extra={<span>Tổng còn nợ: <b>{vnd(custDebts.reduce((s, d) => s + d.balance, 0))}</b></span>}>
+        <Table
+          rowKey="customerId" dataSource={custDebts} size="middle"
+          columns={[
+            { title: "Mã KH", dataIndex: "code", render: (v) => <Tag>{v}</Tag> },
+            { title: "Khách", dataIndex: "name" },
+            { title: "SĐT", dataIndex: "phone", render: (v) => v ?? "-" },
+            { title: "Còn nợ", dataIndex: "balance", align: "right", render: (v) => <b>{vnd(v)}</b> },
+            { title: "Cập nhật", dataIndex: "updatedAt", render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
+          ]}
+          locale={{ emptyText: "Không có công nợ" }}
+        />
       </Card>
 
       <Card title="Đối soát ví — giao dịch chưa đối soát">
