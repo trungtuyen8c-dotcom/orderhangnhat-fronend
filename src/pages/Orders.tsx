@@ -36,7 +36,7 @@ function computeVnd(v: any): number | null {
     || (v?.discountCurrency === "JPY" && n(v?.discountAmount) > 0));
   if (hasUnconverted) return null;
   const toVnd = (amt: any, cur: any) => (cur === "JPY" ? n(amt) * rate : n(amt));
-  return subtotal * rate + toVnd(v.shipAmount, v.shipCurrency) + toVnd(v.surchargeAmount, v.surchargeCurrency) - toVnd(v.discountAmount, v.discountCurrency);
+  return subtotal * rate + toVnd(v?.shipAmount, v?.shipCurrency) + toVnd(v?.surchargeAmount, v?.surchargeCurrency) - toVnd(v?.discountAmount, v?.discountCurrency);
 }
 
 function fmtVal(field: string, val: any) {
