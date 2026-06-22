@@ -8,7 +8,9 @@ import { Popconfirm } from "antd";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
-import { STATUS_LABEL, STATUS_COLOR, NEXT, vnd } from "../lib/status";
+import { STATUS_LABEL, STATUS_COLOR, vnd } from "../lib/status";
+
+const STATUS_OPTIONS = Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }));
 
 interface Order { id: string; code: string; status: string; totalQuote: string | null; totalVnd: string | null; customer?: { name: string }; }
 interface Customer { id: string; name: string; }
@@ -22,12 +24,18 @@ const FIELD_LABEL: Record<string, string> = {
 };
 const ACTION_LABEL: Record<string, string> = { created: "Tạo đơn", updated: "Sửa đơn", status_changed: "Đổi trạng thái" };
 
-// totalVnd = subtotalJpy x tỉ giá + ship + phụ thu - giảm (JPY x tỉ giá, VND cộng thẳng)
+// totalVnd = subtotalJpy x tỉ giá + ship + phụ thu - giảm (JPY x tỉ giá, VND cộng thẳng).
+// Chưa có tỉ giá mà còn khoản ¥ chưa quy đổi -> null. Phí VND vẫn cộng được.
 function computeVnd(v: any): number | null {
   const rate = Number(v?.exchangeRate ?? 0);
-  if (!rate) return null;
   const subtotal = (v?.items ?? []).reduce((s: number, i: any) => s + Number(i?.qty ?? 0) * Number(i?.unitPriceJpy ?? 0), 0);
-  const toVnd = (amt: any, cur: any) => (cur === "JPY" ? Number(amt ?? 0) * rate : Number(amt ?? 0));
+  const n = (x: any) => Number(x ?? 0);
+  const hasUnconverted = !rate && (subtotal > 0
+    || (v?.shipCurrency === "JPY" && n(v?.shipAmount) > 0)
+    || (v?.surchargeCurrency === "JPY" && n(v?.surchargeAmount) > 0)
+    || (v?.discountCurrency === "JPY" && n(v?.discountAmount) > 0));
+  if (hasUnconverted) return null;
+  const toVnd = (amt: any, cur: any) => (cur === "JPY" ? n(amt) * rate : n(amt));
   return subtotal * rate + toVnd(v.shipAmount, v.shipCurrency) + toVnd(v.surchargeAmount, v.surchargeCurrency) - toVnd(v.discountAmount, v.discountCurrency);
 }
 
@@ -128,9 +136,10 @@ export default function Orders() {
               <Space wrap>
                 <Button size="small" icon={<EyeOutlined />} onClick={() => openDetail(o.id)}>Chi tiết</Button>
                 {can("orders.update") && ["draft", "quoted"].includes(o.status) && <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(o.id)} />}
-                {can("orders.update_status") && (NEXT[o.status] ?? []).map((ns) => (
-                  <Button key={ns} size="small" type="dashed" onClick={() => changeStatus(o.id, ns)}>{STATUS_LABEL[ns] ?? ns}</Button>
-                ))}
+                {can("orders.update_status") && (
+                  <Select size="small" value={o.status} style={{ width: 130 }}
+                    options={STATUS_OPTIONS} onChange={(ns) => changeStatus(o.id, ns)} />
+                )}
                 {can("orders.delete") && <Popconfirm title="Xóa đơn này?" onConfirm={() => del(o.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>}
               </Space>
             ),

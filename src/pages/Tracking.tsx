@@ -4,9 +4,12 @@ import { PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
+import { vnd } from "../lib/status";
 
-interface T { id: string; code: string; orderId: string | null; jpName: string | null; jpWeightKg: string | null; status: string; }
+interface T { id: string; code: string; orderId: string | null; jpName: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; status: string; }
 interface Order { id: string; code: string; }
+
+const shipVnd = (t: T) => Number(t.jpWeightKg ?? 0) * Number(t.unitPriceVndPerKg ?? 0);
 
 export default function Tracking() {
   const { can } = usePermission();
@@ -53,6 +56,8 @@ export default function Tracking() {
           { title: "Đơn", dataIndex: "orderId", render: (v) => (v ? <Tag color="blue">đã gán</Tag> : <Tag>chưa</Tag>) },
           { title: "Tên JP", dataIndex: "jpName" },
           { title: "Cân (kg)", dataIndex: "jpWeightKg" },
+          { title: "Đơn giá đ/kg", dataIndex: "unitPriceVndPerKg", render: (v) => (v ? vnd(v) : "-") },
+          { title: "Thành tiền", render: (_, t) => (shipVnd(t) ? <b>{vnd(shipVnd(t))}</b> : "-") },
           { title: "Trạng thái", dataIndex: "status", render: (v) => <Tag>{v}</Tag> },
           {
             title: "", width: 160, render: (_, t) => (
@@ -73,6 +78,8 @@ export default function Tracking() {
           </Form.Item>
           <Form.Item name="jpName" label="Tên (JP)"><Input /></Form.Item>
           <Form.Item name="jpPriceJpy" label="Giá ¥"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="jpWeightKg" label="Cân (kg)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="unitPriceVndPerKg" label="Đơn giá ship (đ/kg) - theo từng khách"><InputNumber min={0} step={1000} style={{ width: "100%" }} /></Form.Item>
         </Form>
       </Modal>
 
