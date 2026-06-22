@@ -28,8 +28,21 @@ export default function Tracking() {
     if (can("orders.list")) api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
   }, []);
 
+  const [scraping, setScraping] = useState(false);
+  async function fetchFromLink() {
+    const url = form.getFieldValue("sourceUrl");
+    if (!url) return message.warning("Dán link sản phẩm trước");
+    setScraping(true);
+    try {
+      const r = await api.get("/trackings/scrape", { params: { url } });
+      form.setFieldsValue({ jpName: r.data.name ?? undefined, jpPriceJpy: r.data.priceJpy ?? undefined });
+      message.success("Đã lấy tên + giá");
+    } catch (e: any) { message.error(e?.response?.data?.message ?? "Không lấy được"); }
+    finally { setScraping(false); }
+  }
+
   async function create() {
-    const v = await form.validateFields();
+    const { sourceUrl, ...v } = await form.validateFields();
     try { await api.post("/trackings", v); message.success("Đã thêm tracking"); setOpen(false); form.resetFields(); load(); }
     catch { message.error("Tạo tracking thất bại"); }
   }
@@ -75,6 +88,9 @@ export default function Tracking() {
           <Form.Item name="code" label="Mã tracking" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="orderId" label="Gán đơn (tùy chọn)">
             <Select allowClear showSearch optionFilterProp="label" options={orders.map((o) => ({ value: o.id, label: o.code }))} />
+          </Form.Item>
+          <Form.Item name="sourceUrl" label="Link sản phẩm (Yahoo / Mercari)">
+            <Input.Search placeholder="Dán link rồi bấm Lấy" enterButton="Lấy" loading={scraping} onSearch={fetchFromLink} />
           </Form.Item>
           <Form.Item name="jpName" label="Tên (JP)"><Input /></Form.Item>
           <Form.Item name="jpPriceJpy" label="Giá ¥"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item>
