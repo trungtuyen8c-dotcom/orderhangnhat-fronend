@@ -35,7 +35,21 @@ body { margin: 0; font-family: Inter, system-ui, sans-serif; -webkit-font-smooth
   background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff;
   display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800;
 }
-.ant-menu-light { border-inline-end: none !important; padding: 10px; }
+.ant-menu-light { border-inline-end: none !important; padding: 8px 10px; }
+
+/* Ô tìm menu */
+.sider-search { padding: 12px 12px 4px; }
+.sider-search .ant-input-affix-wrapper { border-radius: 8px; background: #f8fafc; border-color: #eef2f6; }
+.sider-empty { padding: 8px 20px; color: #94a3b8; font-size: 12px; }
+
+/* Tiêu đề nhóm menu kiểu dashboard */
+.ant-menu-item-group-title {
+  font-size: 11px !important; font-weight: 600 !important; letter-spacing: .04em;
+  text-transform: uppercase; color: #94a3b8 !important; padding: 14px 12px 6px !important;
+}
+.app-sider .ant-menu-item { border-radius: 8px; margin-inline: 0 !important; }
+.app-sider .ant-menu-item-selected { background: #eef2ff !important; color: #4f46e5 !important; font-weight: 600; }
+.app-sider .ant-menu-item-selected .anticon { color: #4f46e5 !important; }
 
 /* ===== Header ===== */
 .site-header {

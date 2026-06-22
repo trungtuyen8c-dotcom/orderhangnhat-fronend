@@ -1,10 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Layout as AntLayout, Menu, Avatar, Dropdown, Modal, Form, Input, App, Badge, Popover, List, Button } from "antd";
 import {
   DashboardOutlined, ShoppingCartOutlined, TeamOutlined, BarcodeOutlined,
   ContainerOutlined, DollarOutlined, InboxOutlined, SettingOutlined,
-  UserOutlined, LogoutOutlined, KeyOutlined, BellOutlined, DownOutlined,
+  UserOutlined, LogoutOutlined, KeyOutlined, BellOutlined, DownOutlined, SearchOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../auth";
 import { usePermission } from "../hooks/usePermission";
@@ -12,17 +12,28 @@ import { api } from "../api";
 
 const { Header, Sider, Content } = AntLayout;
 
-const MENU = [
-  { key: "/", icon: <DashboardOutlined />, label: "Dashboard" },
-  { key: "/orders", icon: <ShoppingCartOutlined />, label: "Đơn hàng", perm: "orders.list" },
-  { key: "/customers", icon: <TeamOutlined />, label: "Khách hàng", perm: "customers.list" },
-  { key: "/tracking", icon: <BarcodeOutlined />, label: "Tracking", perm: "trackings.list" },
-  { key: "/warehouse-jp", icon: <InboxOutlined />, label: "Kho Nhật", perm: "warehouse.weigh_jp" },
-  { key: "/shipments", icon: <ContainerOutlined />, label: "Chuyến & Chứng từ", perm: "shipments.list" },
-  { key: "/accounting", icon: <DollarOutlined />, label: "Kế toán", perm: "accounting.reconcile" },
-  { key: "/warehouse", icon: <InboxOutlined />, label: "Kho VN", perm: "warehouse.weigh_vn" },
-  { key: "/admin", icon: <SettingOutlined />, label: "Quản trị", perm: "users.list" },
+interface NavItem { key: string; icon: ReactNode; label: string; perm?: string }
+const GROUPS: { title?: string; items: NavItem[] }[] = [
+  { items: [{ key: "/", icon: <DashboardOutlined />, label: "Dashboard" }] },
+  { title: "Vận hành", items: [
+    { key: "/orders", icon: <ShoppingCartOutlined />, label: "Đơn hàng", perm: "orders.list" },
+    { key: "/customers", icon: <TeamOutlined />, label: "Khách hàng", perm: "customers.list" },
+    { key: "/tracking", icon: <BarcodeOutlined />, label: "Tracking", perm: "trackings.list" },
+  ] },
+  { title: "Kho & Vận chuyển", items: [
+    { key: "/warehouse-jp", icon: <InboxOutlined />, label: "Kho Nhật", perm: "warehouse.weigh_jp" },
+    { key: "/shipments", icon: <ContainerOutlined />, label: "Chuyến & Chứng từ", perm: "shipments.list" },
+    { key: "/warehouse", icon: <InboxOutlined />, label: "Kho VN", perm: "warehouse.weigh_vn" },
+  ] },
+  { title: "Tài chính", items: [
+    { key: "/accounting", icon: <DollarOutlined />, label: "Kế toán", perm: "accounting.reconcile" },
+  ] },
+  { title: "Hệ thống", items: [
+    { key: "/admin", icon: <SettingOutlined />, label: "Quản trị", perm: "users.list" },
+  ] },
 ];
+const ALL = GROUPS.flatMap((g) => g.items);
+const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
 
 export function Layout({ children }: { children: ReactNode }) {
   const { me, logout } = useAuth();
@@ -33,14 +44,29 @@ export function Layout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const [alerts, setAlerts] = useState<{ code: string }[]>([]);
+  const [q, setQ] = useState("");
   const [form] = Form.useForm();
 
   useEffect(() => {
     api.get<{ orders: { code: string }[] }>("/stats/alerts").then((r) => setAlerts(r.data.orders ?? [])).catch(() => {});
   }, []);
 
-  const items = MENU.filter((m) => !m.perm || can(m.perm)).map((m) => ({ key: m.key, icon: m.icon, label: m.label }));
-  const current = MENU.find((m) => m.key === loc.pathname)?.label ?? "";
+  const menuItems = useMemo(() => {
+    const toItem = (m: NavItem) => ({ key: m.key, icon: m.icon, label: m.label });
+    if (q.trim()) {
+      const nq = norm(q);
+      return ALL.filter((m) => (!m.perm || can(m.perm)) && norm(m.label).includes(nq)).map(toItem);
+    }
+    const out: any[] = [];
+    for (const g of GROUPS) {
+      const vis = g.items.filter((m) => !m.perm || can(m.perm));
+      if (!vis.length) continue;
+      if (g.title && !collapsed) out.push({ type: "group", label: g.title, children: vis.map(toItem) });
+      else out.push(...vis.map(toItem));
+    }
+    return out;
+  }, [q, collapsed, can]);
+  const current = ALL.find((m) => m.key === loc.pathname)?.label ?? "";
 
   async function changePw() {
     const v = await form.validateFields();
@@ -69,9 +95,16 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <AntLayout style={{ minHeight: "100vh" }}>
-      <Sider className="app-sider" theme="light" collapsible collapsed={collapsed} onCollapse={setCollapsed} width={232}>
+      <Sider className="app-sider" theme="light" collapsible collapsed={collapsed} onCollapse={setCollapsed} width={236}>
         <div className="app-logo"><span className="dot">日</span>{!collapsed && <span>Order Hàng Nhật</span>}</div>
-        <Menu mode="inline" selectedKeys={[loc.pathname]} items={items} onClick={(e) => nav(e.key)} />
+        {!collapsed && (
+          <div className="sider-search">
+            <Input allowClear value={q} onChange={(e) => setQ(e.target.value)}
+              prefix={<SearchOutlined style={{ color: "#94a3b8" }} />} placeholder="Tìm menu..." />
+          </div>
+        )}
+        <Menu mode="inline" selectedKeys={[loc.pathname]} items={menuItems} onClick={(e) => nav(e.key)} />
+        {q.trim() && !menuItems.length && <div className="sider-empty">Không có mục khớp</div>}
       </Sider>
       <AntLayout>
         <Header className="site-header">
