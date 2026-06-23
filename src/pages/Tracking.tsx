@@ -97,7 +97,6 @@ export default function Tracking() {
           <Form.Item name="jpPriceJpy" label="Giá ¥"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="jpWeightKg" label="Cân (kg)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="unitPriceVndPerKg" label="Đơn giá ship (đ/kg) - theo từng khách"><InputNumber min={0} step={1000} style={{ width: "100%" }} /></Form.Item>
-          <Form.Item name="vnTrackingCode" label="Tracking VN (nội địa)"><Input /></Form.Item>
         </Form>
       </Modal>
 

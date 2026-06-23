@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import {
   Card, Table, Button, Modal, Form, Input, InputNumber, Select, Space, Tag,
-  Drawer, Descriptions, Divider, Timeline, App,
+  Drawer, Descriptions, Divider, Timeline, DatePicker, App,
 } from "antd";
+import dayjs from "dayjs";
 import { PlusOutlined, MinusCircleOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { Popconfirm } from "antd";
 import { api } from "../api";
@@ -12,7 +13,7 @@ import { STATUS_LABEL, STATUS_COLOR, vnd } from "../lib/status";
 
 const STATUS_OPTIONS = Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }));
 
-interface Order { id: string; code: string; status: string; totalQuote: string | null; totalVnd: string | null; customer?: { name: string }; }
+interface Order { id: string; code: string; status: string; totalQuote: string | null; totalVnd: string | null; createdAt?: string; customer?: { name: string }; }
 interface Customer { id: string; name: string; }
 
 const jpy = (n: number | string | null | undefined) => (n == null ? "-" : Number(n).toLocaleString() + " ¥");
@@ -55,6 +56,7 @@ export default function Orders() {
   const { message } = App.useApp();
   const [rows, setRows] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [methods, setMethods] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -67,21 +69,8 @@ export default function Orders() {
   useEffect(() => {
     load();
     if (can("customers.list")) api.get<Customer[]>("/customers").then((r) => setCustomers(r.data)).catch(() => {});
+    api.get<{ name: string }[]>("/accounting/wallets").then((r) => setMethods(r.data.map((w) => w.name))).catch(() => {});
   }, []);
-
-  const [scrapeIdx, setScrapeIdx] = useState<number | null>(null);
-  async function fetchItem(name: number) {
-    const url = form.getFieldValue(["items", name, "url"]);
-    if (!url) return message.warning("Dán link sản phẩm trước");
-    setScrapeIdx(name);
-    try {
-      const r = await api.get("/scrape", { params: { url } });
-      if (r.data.name) form.setFieldValue(["items", name, "name"], r.data.name);
-      if (r.data.priceJpy != null) form.setFieldValue(["items", name, "unitPriceJpy"], r.data.priceJpy);
-      message.success("Đã lấy tên + giá");
-    } catch (e: any) { message.error(e?.response?.data?.message ?? "Không lấy được"); }
-    finally { setScrapeIdx(null); }
-  }
 
   function openCreate() {
     setEditId(null); form.resetFields();
@@ -95,7 +84,7 @@ export default function Orders() {
     setEditId(id);
     form.setFieldsValue({
       customerId: o.customerId,
-      items: o.items.map((i: any) => ({ name: i.name, url: i.url, qty: i.qty, unitPriceJpy: Number(i.unitPriceJpy) })),
+      items: o.items.map((i: any) => ({ name: i.name, url: i.url, qty: i.qty, unitPriceJpy: Number(i.unitPriceJpy), shipJpy: i.shipJpy != null ? Number(i.shipJpy) : undefined, purchaseDate: i.purchaseDate ? dayjs(i.purchaseDate) : undefined, paymentMethod: i.paymentMethod ?? undefined })),
       exchangeRate: o.exchangeRate ? Number(o.exchangeRate) : undefined,
       shipAmount: Number(o.shipAmount), shipCurrency: o.shipCurrency,
       surchargeAmount: Number(o.surchargeAmount), surchargeCurrency: o.surchargeCurrency,
@@ -109,6 +98,7 @@ export default function Orders() {
 
   async function submitOrder() {
     const v = await form.validateFields();
+    v.items = (v.items ?? []).map((i: any) => ({ ...i, purchaseDate: i.purchaseDate ? i.purchaseDate.toISOString() : undefined }));
     try {
       if (editId) await api.patch(`/orders/${editId}`, v);
       else await api.post("/orders", v);
@@ -149,6 +139,7 @@ export default function Orders() {
         rowKey="id" loading={loading} dataSource={rows} size="middle"
         columns={[
           { title: "Mã", dataIndex: "code" },
+          { title: "Ngày tạo", dataIndex: "createdAt", render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
           { title: "Khách", dataIndex: ["customer", "name"] },
           { title: "Trạng thái", dataIndex: "status", render: (v) => <Tag color={STATUS_COLOR[v]}>{STATUS_LABEL[v] ?? v}</Tag> },
           { title: "Báo giá", dataIndex: "totalQuote", render: (v) => jpy(v) },
@@ -182,22 +173,30 @@ export default function Orders() {
                 {fields.map(({ key, name, ...rest }) => (
                   <div key={key} style={{ border: "1px solid #eef2f6", borderRadius: 8, padding: 10, marginBottom: 8 }}>
                     <Form.Item {...rest} name={[name, "url"]} style={{ marginBottom: 8 }}>
-                      <Input.Search placeholder="Link Nhật (Mercari/Yahoo) - bấm Lấy tự điền tên + giá"
-                        enterButton="Lấy" loading={scrapeIdx === name} onSearch={() => fetchItem(name)} />
+                      <Input placeholder="Link sản phẩm Nhật (Mercari/Yahoo...)" />
                     </Form.Item>
-                    <Space align="baseline" style={{ display: "flex" }}>
-                      <Form.Item {...rest} name={[name, "name"]} rules={[{ required: true }]} style={{ marginBottom: 0 }}><Input placeholder="Tên sản phẩm" style={{ width: 230 }} /></Form.Item>
-                      <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber min={1} placeholder="SL" style={{ width: 64 }} /></Form.Item>
-                      <Form.Item {...rest} name={[name, "unitPriceJpy"]} rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber min={0} placeholder="Giá ¥" style={{ width: 110 }} /></Form.Item>
+                    <Space align="baseline" style={{ display: "flex" }} wrap>
+                      <Form.Item {...rest} name={[name, "name"]} rules={[{ required: true }]} style={{ marginBottom: 8 }}><Input placeholder="Tên sản phẩm" style={{ width: 220 }} /></Form.Item>
+                      <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true }]} style={{ marginBottom: 8 }}><InputNumber min={1} placeholder="SL" style={{ width: 60 }} /></Form.Item>
+                      <Form.Item {...rest} name={[name, "unitPriceJpy"]} rules={[{ required: true }]} style={{ marginBottom: 8 }}><InputNumber min={0} placeholder="Giá ¥" style={{ width: 100 }} /></Form.Item>
+                      <Form.Item {...rest} name={[name, "shipJpy"]} style={{ marginBottom: 8 }}><InputNumber min={0} placeholder="Ship ¥" style={{ width: 90 }} /></Form.Item>
                       <MinusCircleOutlined onClick={() => remove(name)} />
                     </Space>
-                    <Form.Item noStyle shouldUpdate>
-                      {() => {
-                        const rate = Number(form.getFieldValue("exchangeRate") ?? 0);
-                        const p = Number(form.getFieldValue(["items", name, "unitPriceJpy"]) ?? 0);
-                        return rate && p ? <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>≈ {vnd(p * rate)} / sp</div> : null;
-                      }}
-                    </Form.Item>
+                    <Space align="baseline" style={{ display: "flex" }} wrap>
+                      <Form.Item {...rest} name={[name, "purchaseDate"]} style={{ marginBottom: 0 }}><DatePicker placeholder="Ngày mua" format="DD/MM/YYYY" style={{ width: 150 }} /></Form.Item>
+                      <Form.Item {...rest} name={[name, "paymentMethod"]} style={{ marginBottom: 0 }}>
+                        <Select allowClear showSearch placeholder="PT thanh toán" style={{ width: 180 }}
+                          options={methods.map((m) => ({ value: m, label: m }))} />
+                      </Form.Item>
+                      <Form.Item noStyle shouldUpdate>
+                        {() => {
+                          const rate = Number(form.getFieldValue("exchangeRate") ?? 0);
+                          const p = Number(form.getFieldValue(["items", name, "unitPriceJpy"]) ?? 0);
+                          const sh = Number(form.getFieldValue(["items", name, "shipJpy"]) ?? 0);
+                          return rate && (p || sh) ? <span style={{ fontSize: 12, color: "#64748b" }}>≈ {vnd((p + sh) * rate)} / sp</span> : null;
+                        }}
+                      </Form.Item>
+                    </Space>
                   </div>
                 ))}
                 <Button type="dashed" onClick={() => add({ qty: 1, unitPriceJpy: 0 })} block icon={<PlusOutlined />}>Thêm món</Button>
@@ -273,7 +272,14 @@ export default function Orders() {
             </Descriptions>
             <Divider>Món hàng</Divider>
             <Table rowKey="id" size="small" pagination={false} dataSource={detail.items}
-              columns={[{ title: "Tên", dataIndex: "name" }, { title: "SL", dataIndex: "qty" }, { title: "Giá ¥", dataIndex: "unitPriceJpy", render: (v) => Number(v).toLocaleString() }]} />
+              columns={[
+                { title: "Tên", dataIndex: "name" },
+                { title: "SL", dataIndex: "qty" },
+                { title: "Giá ¥", dataIndex: "unitPriceJpy", render: (v) => Number(v).toLocaleString() },
+                { title: "Ship ¥", dataIndex: "shipJpy", render: (v) => (v ? Number(v).toLocaleString() : "-") },
+                { title: "Ngày mua", dataIndex: "purchaseDate", render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
+                { title: "PTTT", dataIndex: "paymentMethod", render: (v) => v ?? "-" },
+              ]} />
             <Divider>Tracking</Divider>
             <Table rowKey="id" size="small" pagination={false} dataSource={detail.trackings}
               locale={{ emptyText: "Chưa có" }}
