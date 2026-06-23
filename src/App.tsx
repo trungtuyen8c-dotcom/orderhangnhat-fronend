@@ -6,7 +6,6 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Orders from "./pages/Orders";
 import Customers from "./pages/Customers";
-import Tracking from "./pages/Tracking";
 import WarehouseJp from "./pages/WarehouseJp";
 import Shipments from "./pages/Shipments";
 import Accounting from "./pages/Accounting";
@@ -29,7 +28,6 @@ export default function App() {
           <Route path="/" element={<RequireAuth><Layout><Dashboard /></Layout></RequireAuth>} />
           <Route path="/orders" element={page("orders.list", <Orders />)} />
           <Route path="/customers" element={page("customers.list", <Customers />)} />
-          <Route path="/tracking" element={page("trackings.list", <Tracking />)} />
           <Route path="/warehouse-jp" element={page("warehouse.weigh_jp", <WarehouseJp />)} />
           <Route path="/shipments" element={page("shipments.list", <Shipments />)} />
           <Route path="/accounting" element={page("accounting.reconcile", <Accounting />)} />

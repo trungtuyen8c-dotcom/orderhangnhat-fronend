@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Layout as AntLayout, Menu, Avatar, Dropdown, Modal, Form, Input, App, Badge, Popover, List, Button } from "antd";
 import {
-  DashboardOutlined, ShoppingCartOutlined, TeamOutlined, BarcodeOutlined,
+  DashboardOutlined, ShoppingCartOutlined, TeamOutlined,
   ContainerOutlined, DollarOutlined, InboxOutlined, SettingOutlined,
   UserOutlined, LogoutOutlined, KeyOutlined, BellOutlined, DownOutlined, SearchOutlined,
 } from "@ant-design/icons";
@@ -18,7 +18,6 @@ const GROUPS: { title?: string; items: NavItem[] }[] = [
   { title: "Vận hành", items: [
     { key: "/orders", icon: <ShoppingCartOutlined />, label: "Đơn hàng", perm: "orders.list" },
     { key: "/customers", icon: <TeamOutlined />, label: "Khách hàng", perm: "customers.list" },
-    { key: "/tracking", icon: <BarcodeOutlined />, label: "Tracking", perm: "trackings.list" },
   ] },
   { title: "Kho & Vận chuyển", items: [
     { key: "/warehouse-jp", icon: <InboxOutlined />, label: "Kho Nhật", perm: "warehouse.weigh_jp" },

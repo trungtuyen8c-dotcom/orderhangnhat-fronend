@@ -96,6 +96,7 @@ export default function Orders() {
     form.setFieldsValue({
       customerId: o.customerId,
       items: o.items.map((i: any) => ({ name: i.name, url: i.url, qty: i.qty, unitPriceJpy: Number(i.unitPriceJpy), shipJpy: i.shipJpy != null ? Number(i.shipJpy) : undefined, purchaseDate: i.purchaseDate ? dayjs(i.purchaseDate) : undefined, paymentMethod: i.paymentMethod ?? undefined })),
+      trackings: (o.trackings ?? []).map((t: any) => ({ id: t.id, code: t.code, jpWeightKg: t.jpWeightKg != null ? Number(t.jpWeightKg) : undefined, unitPriceVndPerKg: t.unitPriceVndPerKg != null ? Number(t.unitPriceVndPerKg) : undefined })),
       exchangeRate: o.exchangeRate ? Number(o.exchangeRate) : undefined,
       shipAmount: Number(o.shipAmount), shipCurrency: o.shipCurrency,
       surchargeAmount: Number(o.surchargeAmount), surchargeCurrency: o.surchargeCurrency,
@@ -212,6 +213,30 @@ export default function Orders() {
                   </div>
                 ))}
                 <Button type="dashed" onClick={() => add({ qty: 1, unitPriceJpy: 0 })} block icon={<PlusOutlined />}>Thêm món</Button>
+              </>
+            )}
+          </Form.List>
+
+          <Divider>Mã vận đơn (kiện) - tính ship theo cân</Divider>
+          <Form.List name="trackings">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map(({ key, name, ...rest }) => (
+                  <Space key={key} align="baseline" style={{ display: "flex", marginBottom: 8 }} wrap>
+                    <Form.Item {...rest} name={[name, "code"]} rules={[{ required: true }]} style={{ marginBottom: 0 }}><Input placeholder="Mã vận đơn" style={{ width: 200 }} /></Form.Item>
+                    <Form.Item {...rest} name={[name, "jpWeightKg"]} style={{ marginBottom: 0 }}><InputNumber min={0} step={0.1} placeholder="Cân kg" style={{ width: 100 }} /></Form.Item>
+                    <Form.Item {...rest} name={[name, "unitPriceVndPerKg"]} style={{ marginBottom: 0 }}><InputNumber min={0} step={1000} placeholder="Đ/kg" style={{ width: 120 }} /></Form.Item>
+                    <Form.Item noStyle shouldUpdate>
+                      {() => {
+                        const kg = Number(form.getFieldValue(["trackings", name, "jpWeightKg"]) ?? 0);
+                        const u = Number(form.getFieldValue(["trackings", name, "unitPriceVndPerKg"]) ?? 0);
+                        return kg && u ? <span style={{ fontSize: 12, color: "#64748b" }}>{vnd(kg * u)}</span> : null;
+                      }}
+                    </Form.Item>
+                    <MinusCircleOutlined onClick={() => remove(name)} />
+                  </Space>
+                ))}
+                <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>Thêm mã vận đơn</Button>
               </>
             )}
           </Form.List>
