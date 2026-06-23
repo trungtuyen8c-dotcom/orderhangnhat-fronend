@@ -4,8 +4,9 @@ import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
+import { vnd } from "../lib/status";
 
-interface Customer { id: string; name: string; fbZalo?: string | null; phone?: string | null; note?: string | null; }
+interface Customer { id: string; code?: string | null; name: string; fbZalo?: string | null; phone?: string | null; address?: string | null; note?: string | null; revenue?: number; debt?: number; }
 
 export default function Customers() {
   const { can } = usePermission();
@@ -44,10 +45,13 @@ export default function Customers() {
         <Table
           rowKey="id" loading={loading} dataSource={rows} size="middle"
           columns={[
+            { title: "Mã KH", dataIndex: "code", width: 90, render: (v) => v ?? "-" },
             { title: "Tên", dataIndex: "name" },
-            { title: "FB/Zalo", dataIndex: "fbZalo" },
             { title: "SĐT", dataIndex: "phone" },
-            { title: "Ghi chú", dataIndex: "note" },
+            { title: "FB/Zalo", dataIndex: "fbZalo" },
+            { title: "Địa chỉ", dataIndex: "address", ellipsis: true },
+            { title: "Doanh số", dataIndex: "revenue", align: "right", render: (v) => vnd(v) },
+            { title: "Công nợ", dataIndex: "debt", align: "right", render: (v) => (Number(v) ? <b style={{ color: "#dc2626" }}>{vnd(v)}</b> : vnd(v)) },
             {
               title: "", width: 110, render: (_, r) => (
                 <Space>
@@ -61,8 +65,9 @@ export default function Customers() {
         <Modal title={edit?.mode === "create" ? "Thêm khách" : "Sửa khách"} open={!!edit} onOk={submit} onCancel={() => setEdit(null)} okText="Lưu">
           <Form form={form} layout="vertical">
             <Form.Item name="name" label="Tên" rules={[{ required: true }]}><Input /></Form.Item>
-            <Form.Item name="fbZalo" label="FB/Zalo"><Input /></Form.Item>
             <Form.Item name="phone" label="SĐT"><Input /></Form.Item>
+            <Form.Item name="fbZalo" label="FB/Zalo"><Input /></Form.Item>
+            <Form.Item name="address" label="Địa chỉ nhận hàng"><Input.TextArea rows={2} /></Form.Item>
             <Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item>
           </Form>
         </Modal>

@@ -6,7 +6,7 @@ import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
 import { vnd } from "../lib/status";
 
-interface T { id: string; code: string; orderId: string | null; jpName: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; status: string; }
+interface T { id: string; code: string; orderId: string | null; jpName: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; vnTrackingCode: string | null; status: string; }
 interface Order { id: string; code: string; }
 
 const shipVnd = (t: T) => Number(t.jpWeightKg ?? 0) * Number(t.unitPriceVndPerKg ?? 0);
@@ -34,7 +34,7 @@ export default function Tracking() {
     if (!url) return message.warning("Dán link sản phẩm trước");
     setScraping(true);
     try {
-      const r = await api.get("/trackings/scrape", { params: { url } });
+      const r = await api.get("/scrape", { params: { url } });
       form.setFieldsValue({ jpName: r.data.name ?? undefined, jpPriceJpy: r.data.priceJpy ?? undefined });
       message.success("Đã lấy tên + giá");
     } catch (e: any) { message.error(e?.response?.data?.message ?? "Không lấy được"); }
@@ -71,6 +71,7 @@ export default function Tracking() {
           { title: "Cân (kg)", dataIndex: "jpWeightKg" },
           { title: "Đơn giá đ/kg", dataIndex: "unitPriceVndPerKg", render: (v) => (v ? vnd(v) : "-") },
           { title: "Thành tiền", render: (_, t) => (shipVnd(t) ? <b>{vnd(shipVnd(t))}</b> : "-") },
+          { title: "Tracking VN", dataIndex: "vnTrackingCode", render: (v) => v ?? "-" },
           { title: "Trạng thái", dataIndex: "status", render: (v) => <Tag>{v}</Tag> },
           {
             title: "", width: 160, render: (_, t) => (
@@ -96,6 +97,7 @@ export default function Tracking() {
           <Form.Item name="jpPriceJpy" label="Giá ¥"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="jpWeightKg" label="Cân (kg)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="unitPriceVndPerKg" label="Đơn giá ship (đ/kg) - theo từng khách"><InputNumber min={0} step={1000} style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="vnTrackingCode" label="Tracking VN (nội địa)"><Input /></Form.Item>
         </Form>
       </Modal>
 

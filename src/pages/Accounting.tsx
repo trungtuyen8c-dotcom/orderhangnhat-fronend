@@ -40,7 +40,7 @@ export default function Accounting() {
   async function record() {
     const v = await form.validateFields();
     try {
-      await api.post(`/accounting/orders/${v.orderId}/payments`, { type: v.type, amountVnd: v.amountVnd, walletId: v.walletId });
+      await api.post(`/accounting/orders/${v.orderId}/payments`, { type: v.type, amountVnd: v.amountVnd, method: v.method, walletId: v.walletId });
       message.success("Đã ghi"); form.resetFields(); setDebt(null); loadWallets(); loadRecon(); loadDebts();
     } catch { message.error("Ghi tiền thất bại (kiểm tra quyền hoàn tiền?)"); }
   }
@@ -107,6 +107,12 @@ export default function Accounting() {
           </Form.Item>
           <Form.Item name="amountVnd" rules={[{ required: true }]}>
             <InputNumber min={1} placeholder="Số tiền" style={{ width: 160 }} formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} />
+          </Form.Item>
+          <Form.Item name="method" initialValue="Tiền mặt">
+            <Select style={{ width: 150 }} placeholder="Hình thức" options={[
+              { value: "Tiền mặt", label: "Tiền mặt" }, { value: "Chuyển khoản", label: "Chuyển khoản" },
+              { value: "Momo", label: "Momo" }, { value: "Ví khác", label: "Ví khác" },
+            ]} />
           </Form.Item>
           <Form.Item name="walletId">
             <Select allowClear placeholder="Ví (tùy chọn)" style={{ width: 150 }} options={wallets.map((w) => ({ value: w.id, label: w.name }))} />

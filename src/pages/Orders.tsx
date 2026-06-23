@@ -26,17 +26,22 @@ const ACTION_LABEL: Record<string, string> = { created: "Tạo đơn", updated: 
 
 // totalVnd = subtotalJpy x tỉ giá + ship + phụ thu - giảm (JPY x tỉ giá, VND cộng thẳng).
 // Chưa có tỉ giá mà còn khoản ¥ chưa quy đổi -> null. Phí VND vẫn cộng được.
+const FEES: { amt: string; cur: string; sign: 1 | -1 }[] = [
+  { amt: "shipAmount", cur: "shipCurrency", sign: 1 },
+  { amt: "surchargeAmount", cur: "surchargeCurrency", sign: 1 },
+  { amt: "serviceFeeAmount", cur: "serviceFeeCurrency", sign: 1 },
+  { amt: "jpDomesticShipAmount", cur: "jpDomesticShipCurrency", sign: 1 },
+  { amt: "intlShipAmount", cur: "intlShipCurrency", sign: 1 },
+  { amt: "discountAmount", cur: "discountCurrency", sign: -1 },
+];
 function computeVnd(v: any): number | null {
   const rate = Number(v?.exchangeRate ?? 0);
   const subtotal = (v?.items ?? []).reduce((s: number, i: any) => s + Number(i?.qty ?? 0) * Number(i?.unitPriceJpy ?? 0), 0);
   const n = (x: any) => Number(x ?? 0);
-  const hasUnconverted = !rate && (subtotal > 0
-    || (v?.shipCurrency === "JPY" && n(v?.shipAmount) > 0)
-    || (v?.surchargeCurrency === "JPY" && n(v?.surchargeAmount) > 0)
-    || (v?.discountCurrency === "JPY" && n(v?.discountAmount) > 0));
-  if (hasUnconverted) return null;
+  const jpyFee = FEES.some((f) => v?.[f.cur] === "JPY" && n(v?.[f.amt]) > 0);
+  if (!rate && (subtotal > 0 || jpyFee)) return null;
   const toVnd = (amt: any, cur: any) => (cur === "JPY" ? n(amt) * rate : n(amt));
-  return subtotal * rate + toVnd(v?.shipAmount, v?.shipCurrency) + toVnd(v?.surchargeAmount, v?.surchargeCurrency) - toVnd(v?.discountAmount, v?.discountCurrency);
+  return subtotal * rate + FEES.reduce((s, f) => s + f.sign * toVnd(v?.[f.amt], v?.[f.cur]), 0);
 }
 
 function fmtVal(field: string, val: any) {
@@ -64,9 +69,23 @@ export default function Orders() {
     if (can("customers.list")) api.get<Customer[]>("/customers").then((r) => setCustomers(r.data)).catch(() => {});
   }, []);
 
+  const [scrapeIdx, setScrapeIdx] = useState<number | null>(null);
+  async function fetchItem(name: number) {
+    const url = form.getFieldValue(["items", name, "url"]);
+    if (!url) return message.warning("Dán link sản phẩm trước");
+    setScrapeIdx(name);
+    try {
+      const r = await api.get("/scrape", { params: { url } });
+      if (r.data.name) form.setFieldValue(["items", name, "name"], r.data.name);
+      if (r.data.priceJpy != null) form.setFieldValue(["items", name, "unitPriceJpy"], r.data.priceJpy);
+      message.success("Đã lấy tên + giá");
+    } catch (e: any) { message.error(e?.response?.data?.message ?? "Không lấy được"); }
+    finally { setScrapeIdx(null); }
+  }
+
   function openCreate() {
     setEditId(null); form.resetFields();
-    form.setFieldsValue({ items: [{ qty: 1, unitPriceJpy: 0 }], shipCurrency: "JPY", surchargeCurrency: "VND", discountCurrency: "VND" });
+    form.setFieldsValue({ items: [{ qty: 1, unitPriceJpy: 0 }], shipCurrency: "JPY", surchargeCurrency: "VND", discountCurrency: "VND", serviceFeeCurrency: "VND", jpDomesticShipCurrency: "JPY", intlShipCurrency: "VND" });
     setOpen(true);
   }
 
@@ -81,6 +100,9 @@ export default function Orders() {
       shipAmount: Number(o.shipAmount), shipCurrency: o.shipCurrency,
       surchargeAmount: Number(o.surchargeAmount), surchargeCurrency: o.surchargeCurrency,
       discountAmount: Number(o.discountAmount), discountCurrency: o.discountCurrency,
+      serviceFeeAmount: Number(o.serviceFeeAmount), serviceFeeCurrency: o.serviceFeeCurrency,
+      jpDomesticShipAmount: Number(o.jpDomesticShipAmount), jpDomesticShipCurrency: o.jpDomesticShipCurrency,
+      intlShipAmount: Number(o.intlShipAmount), intlShipCurrency: o.intlShipCurrency,
     });
     setOpen(true);
   }
@@ -158,12 +180,25 @@ export default function Orders() {
             {(fields, { add, remove }) => (
               <>
                 {fields.map(({ key, name, ...rest }) => (
-                  <Space key={key} align="baseline" style={{ display: "flex", marginBottom: 8 }}>
-                    <Form.Item {...rest} name={[name, "name"]} rules={[{ required: true }]}><Input placeholder="Tên món" /></Form.Item>
-                    <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true }]}><InputNumber min={1} placeholder="SL" /></Form.Item>
-                    <Form.Item {...rest} name={[name, "unitPriceJpy"]} rules={[{ required: true }]}><InputNumber min={0} placeholder="Giá ¥" /></Form.Item>
-                    <MinusCircleOutlined onClick={() => remove(name)} />
-                  </Space>
+                  <div key={key} style={{ border: "1px solid #eef2f6", borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                    <Form.Item {...rest} name={[name, "url"]} style={{ marginBottom: 8 }}>
+                      <Input.Search placeholder="Link Nhật (Mercari/Yahoo) - bấm Lấy tự điền tên + giá"
+                        enterButton="Lấy" loading={scrapeIdx === name} onSearch={() => fetchItem(name)} />
+                    </Form.Item>
+                    <Space align="baseline" style={{ display: "flex" }}>
+                      <Form.Item {...rest} name={[name, "name"]} rules={[{ required: true }]} style={{ marginBottom: 0 }}><Input placeholder="Tên sản phẩm" style={{ width: 230 }} /></Form.Item>
+                      <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber min={1} placeholder="SL" style={{ width: 64 }} /></Form.Item>
+                      <Form.Item {...rest} name={[name, "unitPriceJpy"]} rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber min={0} placeholder="Giá ¥" style={{ width: 110 }} /></Form.Item>
+                      <MinusCircleOutlined onClick={() => remove(name)} />
+                    </Space>
+                    <Form.Item noStyle shouldUpdate>
+                      {() => {
+                        const rate = Number(form.getFieldValue("exchangeRate") ?? 0);
+                        const p = Number(form.getFieldValue(["items", name, "unitPriceJpy"]) ?? 0);
+                        return rate && p ? <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>≈ {vnd(p * rate)} / sp</div> : null;
+                      }}
+                    </Form.Item>
+                  </div>
                 ))}
                 <Button type="dashed" onClick={() => add({ qty: 1, unitPriceJpy: 0 })} block icon={<PlusOutlined />}>Thêm món</Button>
               </>
@@ -193,6 +228,24 @@ export default function Orders() {
                 <Form.Item name="discountCurrency" noStyle><Select options={CUR} style={{ width: 64 }} /></Form.Item>
               </Space.Compact>
             </Form.Item>
+            <Form.Item label="Phí dịch vụ">
+              <Space.Compact>
+                <Form.Item name="serviceFeeAmount" noStyle><InputNumber min={0} placeholder="0" /></Form.Item>
+                <Form.Item name="serviceFeeCurrency" noStyle><Select options={CUR} style={{ width: 64 }} /></Form.Item>
+              </Space.Compact>
+            </Form.Item>
+            <Form.Item label="Ship nội địa Nhật">
+              <Space.Compact>
+                <Form.Item name="jpDomesticShipAmount" noStyle><InputNumber min={0} placeholder="0" /></Form.Item>
+                <Form.Item name="jpDomesticShipCurrency" noStyle><Select options={CUR} style={{ width: 64 }} /></Form.Item>
+              </Space.Compact>
+            </Form.Item>
+            <Form.Item label="Vận chuyển Nhật → VN">
+              <Space.Compact>
+                <Form.Item name="intlShipAmount" noStyle><InputNumber min={0} placeholder="0" /></Form.Item>
+                <Form.Item name="intlShipCurrency" noStyle><Select options={CUR} style={{ width: 64 }} /></Form.Item>
+              </Space.Compact>
+            </Form.Item>
           </Space>
           <Divider style={{ margin: "8px 0" }} />
           <div style={{ textAlign: "right", fontSize: 16 }}>
@@ -212,6 +265,9 @@ export default function Orders() {
               <Descriptions.Item label="Ship">{Number(detail.shipAmount).toLocaleString()} {detail.shipCurrency}</Descriptions.Item>
               <Descriptions.Item label="Phụ thu">{Number(detail.surchargeAmount).toLocaleString()} {detail.surchargeCurrency}</Descriptions.Item>
               <Descriptions.Item label="Giảm giá">{Number(detail.discountAmount).toLocaleString()} {detail.discountCurrency}</Descriptions.Item>
+              <Descriptions.Item label="Phí dịch vụ">{Number(detail.serviceFeeAmount).toLocaleString()} {detail.serviceFeeCurrency}</Descriptions.Item>
+              <Descriptions.Item label="Ship nội địa Nhật">{Number(detail.jpDomesticShipAmount).toLocaleString()} {detail.jpDomesticShipCurrency}</Descriptions.Item>
+              <Descriptions.Item label="Vận chuyển Nhật → VN">{Number(detail.intlShipAmount).toLocaleString()} {detail.intlShipCurrency}</Descriptions.Item>
               <Descriptions.Item label="Tổng VND"><b>{vnd(detail.totalVnd)}</b></Descriptions.Item>
               <Descriptions.Item label="Công nợ">{detail.debt ? vnd(detail.debt.balance) : "-"}</Descriptions.Item>
             </Descriptions>
