@@ -63,7 +63,7 @@ export default function Warehouse() {
       <Table
         rowKey="id" loading={loading} dataSource={rows} size="middle"
         columns={[
-          { title: "Đơn", dataIndex: "orderId", render: (v) => v.slice(0, 8) },
+          { title: "Đơn", dataIndex: "orderId", render: (v) => orders.find((o) => o.id === v)?.code ?? v.slice(0, 8) },
           { title: "Cân JP", dataIndex: "jpWeight" },
           { title: "Cân VN", dataIndex: "vnWeight" },
           { title: "Chênh (kg)", dataIndex: "diffKg", render: (v) => (Number(v) !== 0 ? <Tag color="error">{v}</Tag> : <Tag color="success">{v}</Tag>) },

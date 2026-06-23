@@ -31,8 +31,6 @@ const FEES: { amt: string; cur: string; sign: 1 | -1 }[] = [
   { amt: "shipAmount", cur: "shipCurrency", sign: 1 },
   { amt: "surchargeAmount", cur: "surchargeCurrency", sign: 1 },
   { amt: "serviceFeeAmount", cur: "serviceFeeCurrency", sign: 1 },
-  { amt: "jpDomesticShipAmount", cur: "jpDomesticShipCurrency", sign: 1 },
-  { amt: "intlShipAmount", cur: "intlShipCurrency", sign: 1 },
   { amt: "discountAmount", cur: "discountCurrency", sign: -1 },
 ];
 function computeVnd(v: any): number | null {
@@ -71,6 +69,19 @@ export default function Orders() {
     if (can("customers.list")) api.get<Customer[]>("/customers").then((r) => setCustomers(r.data)).catch(() => {});
     api.get<{ name: string }[]>("/accounting/wallets").then((r) => setMethods(r.data.map((w) => w.name))).catch(() => {});
   }, []);
+
+  const [scrapeIdx, setScrapeIdx] = useState<number | null>(null);
+  async function fetchName(name: number) {
+    const url = form.getFieldValue(["items", name, "url"]);
+    if (!url) return message.warning("Dán link sản phẩm trước");
+    setScrapeIdx(name);
+    try {
+      const r = await api.get("/scrape", { params: { url } });
+      if (r.data.name) { form.setFieldValue(["items", name, "name"], r.data.name); message.success("Đã lấy tên"); }
+      else message.warning("Không lấy được tên");
+    } catch (e: any) { message.error(e?.response?.data?.message ?? "Không lấy được"); }
+    finally { setScrapeIdx(null); }
+  }
 
   function openCreate() {
     setEditId(null); form.resetFields();
@@ -173,7 +184,8 @@ export default function Orders() {
                 {fields.map(({ key, name, ...rest }) => (
                   <div key={key} style={{ border: "1px solid #eef2f6", borderRadius: 8, padding: 10, marginBottom: 8 }}>
                     <Form.Item {...rest} name={[name, "url"]} style={{ marginBottom: 8 }}>
-                      <Input placeholder="Link sản phẩm Nhật (Mercari/Yahoo...)" />
+                      <Input.Search placeholder="Link sản phẩm Nhật (Mercari/Yahoo...) - bấm Lấy để tự điền tên"
+                        enterButton="Lấy" loading={scrapeIdx === name} onSearch={() => fetchName(name)} />
                     </Form.Item>
                     <Space align="baseline" style={{ display: "flex" }} wrap>
                       <Form.Item {...rest} name={[name, "name"]} rules={[{ required: true }]} style={{ marginBottom: 8 }}><Input placeholder="Tên sản phẩm" style={{ width: 220 }} /></Form.Item>
@@ -233,18 +245,6 @@ export default function Orders() {
                 <Form.Item name="serviceFeeCurrency" noStyle><Select options={CUR} style={{ width: 64 }} /></Form.Item>
               </Space.Compact>
             </Form.Item>
-            <Form.Item label="Ship nội địa Nhật">
-              <Space.Compact>
-                <Form.Item name="jpDomesticShipAmount" noStyle><InputNumber min={0} placeholder="0" /></Form.Item>
-                <Form.Item name="jpDomesticShipCurrency" noStyle><Select options={CUR} style={{ width: 64 }} /></Form.Item>
-              </Space.Compact>
-            </Form.Item>
-            <Form.Item label="Vận chuyển Nhật → VN">
-              <Space.Compact>
-                <Form.Item name="intlShipAmount" noStyle><InputNumber min={0} placeholder="0" /></Form.Item>
-                <Form.Item name="intlShipCurrency" noStyle><Select options={CUR} style={{ width: 64 }} /></Form.Item>
-              </Space.Compact>
-            </Form.Item>
           </Space>
           <Divider style={{ margin: "8px 0" }} />
           <div style={{ textAlign: "right", fontSize: 16 }}>
@@ -265,8 +265,6 @@ export default function Orders() {
               <Descriptions.Item label="Phụ thu">{Number(detail.surchargeAmount).toLocaleString()} {detail.surchargeCurrency}</Descriptions.Item>
               <Descriptions.Item label="Giảm giá">{Number(detail.discountAmount).toLocaleString()} {detail.discountCurrency}</Descriptions.Item>
               <Descriptions.Item label="Phí dịch vụ">{Number(detail.serviceFeeAmount).toLocaleString()} {detail.serviceFeeCurrency}</Descriptions.Item>
-              <Descriptions.Item label="Ship nội địa Nhật">{Number(detail.jpDomesticShipAmount).toLocaleString()} {detail.jpDomesticShipCurrency}</Descriptions.Item>
-              <Descriptions.Item label="Vận chuyển Nhật → VN">{Number(detail.intlShipAmount).toLocaleString()} {detail.intlShipCurrency}</Descriptions.Item>
               <Descriptions.Item label="Tổng VND"><b>{vnd(detail.totalVnd)}</b></Descriptions.Item>
               <Descriptions.Item label="Công nợ">{detail.debt ? vnd(detail.debt.balance) : "-"}</Descriptions.Item>
             </Descriptions>
