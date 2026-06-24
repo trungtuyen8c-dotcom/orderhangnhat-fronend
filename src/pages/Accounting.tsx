@@ -36,8 +36,12 @@ export default function Accounting() {
   const [debt, setDebt] = useState<string | null>(null);
   const [custDebts, setCustDebts] = useState<CustomerDebt[]>([]);
   const [walletModal, setWalletModal] = useState<{ mode: "create" | "edit"; w?: Wallet } | null>(null);
+  const [fundBalance, setFundBalance] = useState(0);
+  const [fundTxns, setFundTxns] = useState<any[]>([]);
+  const [fundModal, setFundModal] = useState<"topup" | "allocate" | null>(null);
   const [form] = Form.useForm();
   const [wForm] = Form.useForm();
+  const [fForm] = Form.useForm();
   const payCur = Form.useWatch("currency", form) ?? "VND";
   const payAmount = Form.useWatch("amount", form);
   const payRate = Form.useWatch("exchangeRate", form);
@@ -60,10 +64,21 @@ export default function Accounting() {
       if (!walletId && r.data[0]) { setWalletId(r.data[0].id); loadStatement(r.data[0].id); }
     }).catch(() => {});
   const loadDebts = () => api.get<CustomerDebt[]>("/accounting/debts").then((r) => setCustDebts(r.data)).catch(() => {});
+  const loadFund = () => api.get("/accounting/fund").then((r) => { setFundBalance(r.data.balance); setFundTxns(r.data.txns); }).catch(() => {});
   useEffect(() => {
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
-    loadWallets(); loadDebts();
+    loadWallets(); loadDebts(); loadFund();
   }, []);
+
+  async function submitFund() {
+    const v = await fForm.validateFields();
+    const amountYen = Number(v.man) * 10000;
+    try {
+      if (fundModal === "topup") await api.post("/accounting/fund/topup", { amountYen, rate: v.rate, note: v.note });
+      else await api.post("/accounting/fund/allocate", { walletId: v.walletId, amountYen, note: v.note });
+      message.success("Đã lưu quỹ"); setFundModal(null); fForm.resetFields(); loadFund(); loadWallets();
+    } catch (e: any) { message.error(e?.response?.data?.message ?? "Lưu quỹ thất bại"); }
+  }
 
   async function onOrderChange(id: string) {
     if (!id) return setDebt(null);
@@ -86,7 +101,7 @@ export default function Accounting() {
 
   function openWallet(mode: "create" | "edit", w?: Wallet) {
     setWalletModal({ mode, w });
-    if (mode === "edit" && w) wForm.setFieldsValue({ name: w.name, currency: w.currency }); else wForm.resetFields();
+    if (mode === "edit" && w) wForm.setFieldsValue({ name: w.name, currency: w.currency, balance: Number(w.balance) }); else wForm.resetFields();
   }
   async function submitWallet() {
     const v = await wForm.validateFields();
@@ -108,6 +123,26 @@ export default function Accounting() {
           <Col xs={12} md={8} key={w.id}><Card><Statistic title={w.name} value={Number(w.balance)} suffix={w.currency === "JPY" ? "¥" : "₫"} /></Card></Col>
         ))}
       </Row>
+
+      {can("wallets.manage") && (
+        <Card title="Quỹ tổng (vốn mua hàng - JPY)" style={{ marginBottom: 16 }}
+          extra={<Space>
+            <Button size="small" type="primary" onClick={() => setFundModal("topup")}>Nạp quỹ</Button>
+            <Button size="small" onClick={() => setFundModal("allocate")}>Phân bổ vào thẻ</Button>
+          </Space>}>
+          <Statistic value={fundBalance} suffix="¥" formatter={(v) => `${Number(v).toLocaleString("ja-JP")} (${(Number(v) / 10000).toLocaleString("ja-JP")} man)`} />
+          <Table rowKey="id" size="small" pagination={{ pageSize: 8 }} style={{ marginTop: 12 }} dataSource={fundTxns}
+            locale={{ emptyText: "Chưa có giao dịch quỹ" }}
+            columns={[
+              { title: "Ngày", dataIndex: "createdAt", render: (v) => new Date(v).toLocaleDateString("vi-VN") },
+              { title: "Loại", dataIndex: "type", render: (v) => <Tag color={v === "topup" ? "green" : "blue"}>{v === "topup" ? "Nạp quỹ" : "Phân bổ thẻ"}</Tag> },
+              { title: "Số tiền", dataIndex: "amountYen", render: (v, r) => (r.type === "topup" ? "+" : "-") + Number(v).toLocaleString("ja-JP") + " ¥ (" + (Number(v) / 10000) + " man)" },
+              { title: "Tỉ giá", dataIndex: "rate", render: (v) => (v ? Number(v).toLocaleString("vi-VN") : "-") },
+              { title: "Thẻ", dataIndex: "walletId", render: (v) => (v ? wallets.find((w) => w.id === v)?.name ?? "-" : "-") },
+              { title: "Ghi chú", dataIndex: "note", render: (v) => v ?? "-" },
+            ]} />
+        </Card>
+      )}
 
       {can("wallets.manage") && (
         <Card title="Quản lý ví" style={{ marginBottom: 16 }}
@@ -248,7 +283,26 @@ export default function Accounting() {
       <Modal title={walletModal?.mode === "create" ? "Thêm ví" : "Sửa ví"} open={!!walletModal} onOk={submitWallet} onCancel={() => setWalletModal(null)} okText="Lưu">
         <Form form={wForm} layout="vertical" initialValues={{ currency: "VND" }}>
           <Form.Item name="name" label="Tên ví" rules={[{ required: true }]}><Input placeholder="vd: 4356 GLOBAL" /></Form.Item>
-          <Form.Item name="currency" label="Tiền tệ"><Input /></Form.Item>
+          <Form.Item name="currency" label="Tiền tệ"><Input placeholder="JPY hoặc VND" /></Form.Item>
+          <Form.Item name="balance" label="Số dư ban đầu (nhập tay)"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title={fundModal === "topup" ? "Nạp quỹ tổng" : "Phân bổ quỹ vào thẻ"} open={!!fundModal}
+        onOk={submitFund} onCancel={() => { setFundModal(null); fForm.resetFields(); }} okText="Lưu">
+        <Form form={fForm} layout="vertical">
+          {fundModal === "allocate" && (
+            <Form.Item name="walletId" label="Thẻ nhận" rules={[{ required: true }]}>
+              <Select placeholder="Chọn thẻ" options={wallets.map((w) => ({ value: w.id, label: w.name }))} />
+            </Form.Item>
+          )}
+          <Form.Item name="man" label="Số tiền (man = 1 vạn yên)" rules={[{ required: true }]}>
+            <InputNumber min={0} step={1} style={{ width: "100%" }} placeholder="vd: 10 = 100.000¥" addonAfter="man" />
+          </Form.Item>
+          {fundModal === "topup" && (
+            <Form.Item name="rate" label="Tỉ giá lúc nạp (₫/1¥)"><InputNumber min={0} style={{ width: "100%" }} placeholder="vd: 175" /></Form.Item>
+          )}
+          <Form.Item name="note" label="Ghi chú"><Input /></Form.Item>
         </Form>
       </Modal>
     </PageContainer>

@@ -21,7 +21,7 @@ const GROUPS: { title?: string; items: NavItem[] }[] = [
   ] },
   { title: "Kho & Vận chuyển", items: [
     { key: "/warehouse-jp", icon: <InboxOutlined />, label: "Kho Nhật", perm: "warehouse.weigh_jp" },
-    { key: "/shipments", icon: <ContainerOutlined />, label: "Chuyến & Chứng từ", perm: "shipments.list" },
+    { key: "/shipments", icon: <ContainerOutlined />, label: "Chuyến & Chứng từ & Đánh giá", perm: "shipments.list" },
     { key: "/warehouse", icon: <InboxOutlined />, label: "Kho VN", perm: "warehouse.weigh_vn" },
   ] },
   { title: "Tài chính", items: [

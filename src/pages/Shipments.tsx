@@ -63,7 +63,7 @@ export default function Shipments() {
 
   return (
     <PageContainer
-      title="Chuyến & Chứng từ" sub="Gom chuyến và quản lý bộ chứng từ GA"
+      title="Chuyến & Chứng từ & Đánh giá" sub="Gom chuyến, chứng từ GA và đánh giá hàng theo tracking"
       extra={<Space>
         {can("shipments.upload_doc") && <Button icon={<UploadOutlined />} onClick={() => setOpenD(true)}>Tải chứng từ GA</Button>}
         {can("shipments.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpenS(true)}>Tạo chuyến</Button>}
