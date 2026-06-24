@@ -7,12 +7,14 @@ import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
 
 interface S { id: string; code: string; status: string; _count?: { trackings: number; documents: number }; }
+interface Trk { id: string; code: string; review: string | null; order?: { code: string; customer?: { name: string } } | null; }
 const DOC_TYPES = ["invoice", "packing", "ingredient", "purchase_invoice", "tax"];
 
 export default function Shipments() {
   const { can } = usePermission();
   const { message } = App.useApp();
   const [rows, setRows] = useState<S[]>([]);
+  const [trks, setTrks] = useState<Trk[]>([]);
   const [loading, setLoading] = useState(false);
   const [openS, setOpenS] = useState(false);
   const [openD, setOpenD] = useState(false);
@@ -23,7 +25,13 @@ export default function Shipments() {
   const [eForm] = Form.useForm();
 
   const load = () => { setLoading(true); api.get<S[]>("/shipments").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
-  useEffect(() => { load(); }, []);
+  const loadTrk = () => api.get<Trk[]>("/trackings").then((r) => setTrks(r.data)).catch(() => {});
+  useEffect(() => { load(); loadTrk(); }, []);
+
+  async function saveReview(id: string, review: string) {
+    try { await api.patch(`/trackings/${id}`, { review }); message.success("Đã lưu đánh giá"); loadTrk(); }
+    catch { message.error("Lưu đánh giá thất bại"); }
+  }
 
   async function createShipment() {
     const v = await sForm.validateFields();
@@ -80,6 +88,27 @@ export default function Shipments() {
         ]}
       />
 
+      </Card>
+
+      <Card title="Đánh giá hàng (theo tracking)" style={{ marginTop: 16 }}>
+        <Table
+          rowKey="id" dataSource={trks} size="small" pagination={{ pageSize: 20 }}
+          columns={[
+            { title: "Mã tracking", dataIndex: "code", width: 180 },
+            { title: "Đơn", dataIndex: ["order", "code"], width: 110, render: (v) => v ?? "-" },
+            { title: "Khách", dataIndex: ["order", "customer", "name"], render: (v) => v ?? "-" },
+            {
+              title: "Đánh giá", dataIndex: "review", width: 360,
+              render: (v, t) => (
+                <Input defaultValue={v ?? ""} placeholder="Nhập đánh giá / tình trạng hàng"
+                  onBlur={(e) => { if ((e.target.value || "") !== (v ?? "")) saveReview(t.id, e.target.value); }} />
+              ),
+            },
+          ]}
+          locale={{ emptyText: "Chưa có tracking" }}
+        />
+      </Card>
+
       <Modal title="Tạo chuyến" open={openS} onOk={createShipment} onCancel={() => setOpenS(false)} okText="Lưu">
         <Form form={sForm} layout="vertical"><Form.Item name="code" label="Mã chuyến" rules={[{ required: true }]}><Input /></Form.Item></Form>
       </Modal>
@@ -104,7 +133,6 @@ export default function Shipments() {
           </Form.Item>
         </Form>
       </Modal>
-      </Card>
     </PageContainer>
   );
 }
