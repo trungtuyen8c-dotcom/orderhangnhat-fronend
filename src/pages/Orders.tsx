@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Card, Table, Button, Modal, Form, Input, InputNumber, Select, Space, Tag,
   Drawer, Descriptions, Divider, Timeline, DatePicker, App,
@@ -63,12 +63,29 @@ export default function Orders() {
   const watch = Form.useWatch([], form);
   const previewVnd = computeVnd(watch);
 
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+
   const load = () => { setLoading(true); api.get<Order[]>("/orders").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
   useEffect(() => {
     load();
     if (can("customers.list")) api.get<Customer[]>("/customers").then((r) => setCustomers(r.data)).catch(() => {});
     api.get<{ name: string }[]>("/accounting/wallets").then((r) => setMethods(r.data.map((w) => w.name))).catch(() => {});
   }, []);
+
+  const shown = useMemo(() => {
+    const kw = q.trim().toLowerCase();
+    return rows.filter((o) => {
+      if (kw && ![o.code, o.customer?.name].some((x) => (x ?? "").toLowerCase().includes(kw))) return false;
+      if (statusFilter && o.status !== statusFilter) return false;
+      if (range && o.createdAt) {
+        const d = dayjs(o.createdAt);
+        if (d.isBefore(range[0], "day") || d.isAfter(range[1], "day")) return false;
+      }
+      return true;
+    });
+  }, [rows, q, statusFilter, range]);
 
   const [scrapeIdx, setScrapeIdx] = useState<number | null>(null);
   async function fetchName(name: number) {
@@ -147,8 +164,13 @@ export default function Orders() {
       extra={can("orders.create") && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Tạo đơn</Button>}
     >
       <Card>
+      <Space wrap style={{ marginBottom: 16 }}>
+        <Input.Search allowClear placeholder="Tìm mã đơn / khách" style={{ width: 240 }} value={q} onChange={(e) => setQ(e.target.value)} />
+        <Select allowClear placeholder="Trạng thái" style={{ width: 160 }} value={statusFilter} onChange={setStatusFilter} options={STATUS_OPTIONS} />
+        <DatePicker.RangePicker format="DD/MM/YYYY" placeholder={["Từ ngày", "Đến ngày"]} value={range} onChange={(v) => setRange(v as [dayjs.Dayjs, dayjs.Dayjs] | null)} />
+      </Space>
       <Table
-        rowKey="id" loading={loading} dataSource={rows} size="middle"
+        rowKey="id" loading={loading} dataSource={shown} size="middle"
         columns={[
           { title: "Mã", dataIndex: "code" },
           { title: "Ngày tạo", dataIndex: "createdAt", render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },

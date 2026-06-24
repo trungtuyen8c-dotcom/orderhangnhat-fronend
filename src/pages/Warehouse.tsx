@@ -1,76 +1,151 @@
-import { useEffect, useState } from "react";
-import { Card, Table, Form, Select, InputNumber, Input, Button, Tag, App } from "antd";
+import { useEffect, useMemo, useState } from "react";
+import { Card, Table, Form, Select, InputNumber, Input, Button, Tag, Modal, Space, App } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { PageContainer } from "../components/PageContainer";
+import { vnd } from "../lib/status";
 
 interface Order { id: string; code: string; }
-interface Trk { id: string; code: string; vnTrackingCode: string | null; }
-interface Recon { id: string; orderId: string; jpWeight: string | null; vnWeight: string | null; diffKg: string | null; note: string | null; }
+interface Shipment { id: string; code: string; }
+interface Trk {
+  id: string; code: string; orderId: string | null; vnTrackingCode: string | null;
+  jpWeightKg: string | null; vnWeightKg: string | null; unitPriceVndPerKg: string | null;
+  order?: { code: string; customer?: { name: string } | null } | null;
+}
+type Edit = { vnWeightKg?: number | null; vnTrackingCode?: string };
+
+const num = (v: string | null | undefined) => (v == null ? null : Number(v));
 
 export default function Warehouse() {
   const { message } = App.useApp();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [shipmentId, setShipmentId] = useState<string | null>(null);
   const [trks, setTrks] = useState<Trk[]>([]);
-  const [rows, setRows] = useState<Recon[]>([]);
   const [loading, setLoading] = useState(false);
-  const [form] = Form.useForm();
-  const [vForm] = Form.useForm();
+  const [edits, setEdits] = useState<Record<string, Edit>>({});
+  const [q, setQ] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm] = Form.useForm();
 
-  const load = () => { setLoading(true); api.get<Recon[]>("/warehouse/recon").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
-  const loadTrks = () => api.get<Trk[]>("/trackings").then((r) => setTrks(r.data)).catch(() => {});
+  const loadTrks = (sid: string | null = shipmentId) => {
+    if (!sid) { setTrks([]); return; }
+    setLoading(true);
+    api.get<Trk[]>("/trackings", { params: { shipmentId: sid } })
+      .then((r) => { setTrks(r.data); setEdits({}); }).finally(() => setLoading(false));
+  };
   useEffect(() => {
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
-    loadTrks(); load();
+    api.get<Shipment[]>("/shipments").then((r) => setShipments(r.data)).catch(() => {});
   }, []);
 
-  async function submit() {
-    const v = await form.validateFields();
-    try { await api.post("/warehouse/vn-weight", v); message.success("Đã ghi cân + đối soát"); form.resetFields(); load(); }
-    catch { message.error("Ghi cân thất bại"); }
+  // Cân hiệu lực = cân VN đã sửa/đã lưu, chưa có thì cân JP (tạm tính).
+  const effWeight = (t: Trk) => {
+    const e = edits[t.id];
+    if (e?.vnWeightKg !== undefined) return e.vnWeightKg ?? 0;
+    return t.vnWeightKg != null ? Number(t.vnWeightKg) : Number(t.jpWeightKg ?? 0);
+  };
+  const rowMoney = (t: Trk) => effWeight(t) * Number(t.unitPriceVndPerKg ?? 0);
+
+  async function saveRow(t: Trk) {
+    const e = edits[t.id] ?? {};
+    const body: Record<string, unknown> = {};
+    if (e.vnWeightKg !== undefined) { body.vnWeightKg = e.vnWeightKg ?? 0; body.status = "vn_weighed"; }
+    if (e.vnTrackingCode !== undefined) body.vnTrackingCode = e.vnTrackingCode;
+    if (Object.keys(body).length === 0) return message.info("Chưa thay đổi");
+    try { await api.patch(`/trackings/${t.id}`, body); message.success("Đã lưu"); loadTrks(); }
+    catch { message.error("Lưu thất bại"); }
   }
 
-  async function submitVnTrack() {
-    const v = await vForm.validateFields();
-    try { await api.post("/warehouse/vn-tracking", v); message.success("Đã lưu tracking VN"); vForm.resetFields(); loadTrks(); }
-    catch { message.error("Lưu tracking VN thất bại"); }
+  async function addTracking() {
+    const v = await addForm.validateFields();
+    try {
+      await api.post("/trackings", { orderId: v.orderId, code: v.code, shipmentId, vnWeightKg: v.vnWeightKg, vnTrackingCode: v.vnTrackingCode });
+      message.success("Đã thêm tracking"); setAddOpen(false); addForm.resetFields(); loadTrks();
+    } catch { message.error("Thêm tracking thất bại"); }
   }
+
+  const shown = useMemo(() => {
+    const kw = q.trim().toLowerCase();
+    if (!kw) return trks;
+    return trks.filter((t) =>
+      [t.code, t.vnTrackingCode, t.order?.code, t.order?.customer?.name].some((x) => (x ?? "").toLowerCase().includes(kw)));
+  }, [trks, q]);
+
+  const totalJp = useMemo(() => shown.reduce((s, t) => s + Number(t.jpWeightKg ?? 0), 0), [shown]);
+  const totalVn = useMemo(() => shown.reduce((s, t) => s + effWeight(t), 0), [shown, edits]);
+  const diff = Number((totalVn - totalJp).toFixed(3));
 
   return (
-    <PageContainer title="Kho VN" sub="Cân thực tế, đối soát chênh cân và nhập tracking nội địa VN">
-      <Card title="Nhập tracking nội địa VN (hàng về kho VN)" style={{ marginBottom: 16 }}>
-        <Form form={vForm} layout="inline" onFinish={submitVnTrack}>
-          <Form.Item name="trackingId" rules={[{ required: true }]}>
-            <Select showSearch optionFilterProp="label" placeholder="Chọn mã tracking (JP)" style={{ width: 240 }}
-              options={trks.map((t) => ({ value: t.id, label: t.code + (t.vnTrackingCode ? ` (VN: ${t.vnTrackingCode})` : "") }))} />
+    <PageContainer title="Kho VN" sub="Chọn kiện, cân từng tracking, đối soát tổng cân">
+      <Card
+        title="Cân & đối soát theo kiện"
+        extra={
+          <Space>
+            <Select style={{ width: 180 }} placeholder="Chọn kiện" value={shipmentId ?? undefined}
+              showSearch optionFilterProp="label" onChange={(v) => { setShipmentId(v); loadTrks(v); }}
+              options={shipments.map((s) => ({ value: s.id, label: s.code }))} />
+            <Input.Search allowClear placeholder="Tìm khách / tracking / đơn" style={{ width: 220 }}
+              value={q} onChange={(e) => setQ(e.target.value)} />
+            <Button icon={<PlusOutlined />} disabled={!shipmentId} onClick={() => setAddOpen(true)}>Thêm tracking</Button>
+          </Space>
+        }
+      >
+        <Table
+          rowKey="id" loading={loading} dataSource={shown} size="middle" pagination={false} scroll={{ x: 900 }}
+          columns={[
+            { title: "Tracking", dataIndex: "code" },
+            { title: "Đơn", render: (_, t: Trk) => (t.order?.code ? <b>{t.order.code}</b> : <Tag color="warning">chưa gắn</Tag>) },
+            { title: "Khách", render: (_, t: Trk) => t.order?.customer?.name ?? "-" },
+            { title: "Cân JP", dataIndex: "jpWeightKg", width: 90, render: (v) => v ?? "-" },
+            {
+              title: "Cân VN (kg)", width: 140,
+              render: (_, t: Trk) => (
+                <InputNumber min={0} step={0.001} style={{ width: 120 }}
+                  value={edits[t.id]?.vnWeightKg !== undefined ? edits[t.id]!.vnWeightKg : num(t.vnWeightKg)}
+                  onChange={(val) => setEdits((p) => ({ ...p, [t.id]: { ...p[t.id], vnWeightKg: val } }))} />
+              ),
+            },
+            {
+              title: "Tracking VN", width: 160,
+              render: (_, t: Trk) => (
+                <Input style={{ width: 140 }} placeholder="-"
+                  value={edits[t.id]?.vnTrackingCode !== undefined ? edits[t.id]!.vnTrackingCode : (t.vnTrackingCode ?? "")}
+                  onChange={(e) => setEdits((p) => ({ ...p, [t.id]: { ...p[t.id], vnTrackingCode: e.target.value } }))} />
+              ),
+            },
+            { title: "Tiền", align: "right", width: 130, render: (_, t: Trk) => vnd(rowMoney(t)) },
+            { title: "", width: 80, render: (_, t: Trk) => <Button size="small" type="primary" onClick={() => saveRow(t)}>Lưu</Button> },
+          ]}
+          locale={{ emptyText: shipmentId ? "Kiện chưa có tracking" : "Chọn kiện để xem" }}
+          summary={() =>
+            shown.length > 0 ? (
+              <Table.Summary.Row>
+                <Table.Summary.Cell index={0} colSpan={3}><b>Tổng kiện</b></Table.Summary.Cell>
+                <Table.Summary.Cell index={3}><b>{totalJp.toFixed(3)}</b></Table.Summary.Cell>
+                <Table.Summary.Cell index={4}>
+                  <b>{totalVn.toFixed(3)}</b>{" "}
+                  {diff !== 0 ? <Tag color="error">chênh {diff}</Tag> : <Tag color="success">khớp</Tag>}
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={5} colSpan={3} />
+              </Table.Summary.Row>
+            ) : null
+          }
+        />
+      </Card>
+
+      <Modal title="Thêm tracking vào kiện" open={addOpen} onOk={addTracking} onCancel={() => setAddOpen(false)} okText="Thêm">
+        <Form form={addForm} layout="vertical">
+          <Form.Item name="orderId" label="Đơn (mã)" rules={[{ required: true }]}>
+            <Select showSearch optionFilterProp="label" placeholder="Chọn mã đơn" options={orders.map((o) => ({ value: o.id, label: o.code }))} />
           </Form.Item>
-          <Form.Item name="vnTrackingCode" rules={[{ required: true }]}>
-            <Input placeholder="Mã tracking VN" style={{ width: 200 }} />
+          <Form.Item name="code" label="Mã tracking" rules={[{ required: true }]} tooltip="Số tracking, hoặc jpYYMMDD nếu no-track">
+            <Input placeholder="vd: 1234567890 hoặc jp240620" />
           </Form.Item>
-          <Form.Item><Button type="primary" htmlType="submit">Lưu</Button></Form.Item>
+          <Form.Item name="vnWeightKg" label="Cân VN (kg)"><InputNumber min={0} step={0.001} style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="vnTrackingCode" label="Tracking VN"><Input /></Form.Item>
         </Form>
-      </Card>
-      <Card>
-      <Form form={form} layout="inline" onFinish={submit} style={{ marginBottom: 16 }}>
-        <Form.Item name="orderId" rules={[{ required: true }]}>
-          <Select showSearch optionFilterProp="label" placeholder="Chọn đơn" style={{ width: 200 }} options={orders.map((o) => ({ value: o.id, label: o.code }))} />
-        </Form.Item>
-        <Form.Item name="vnWeight" rules={[{ required: true }]}>
-          <InputNumber min={0} step={0.001} placeholder="Cân VN (kg)" style={{ width: 160 }} />
-        </Form.Item>
-        <Form.Item name="note"><Input placeholder="Ghi chú" /></Form.Item>
-        <Form.Item><Button type="primary" htmlType="submit">Ghi cân</Button></Form.Item>
-      </Form>
-      <Table
-        rowKey="id" loading={loading} dataSource={rows} size="middle"
-        columns={[
-          { title: "Đơn", dataIndex: "orderId", render: (v) => orders.find((o) => o.id === v)?.code ?? v.slice(0, 8) },
-          { title: "Cân JP", dataIndex: "jpWeight" },
-          { title: "Cân VN", dataIndex: "vnWeight" },
-          { title: "Chênh (kg)", dataIndex: "diffKg", render: (v) => (Number(v) !== 0 ? <Tag color="error">{v}</Tag> : <Tag color="success">{v}</Tag>) },
-          { title: "Ghi chú", dataIndex: "note" },
-        ]}
-      />
-      </Card>
+      </Modal>
     </PageContainer>
   );
 }

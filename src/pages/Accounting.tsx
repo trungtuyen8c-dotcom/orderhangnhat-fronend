@@ -1,14 +1,24 @@
 import { useEffect, useState } from "react";
-import { Row, Col, Card, Statistic, Table, Form, Select, InputNumber, Input, Button, Tag, Space, Popconfirm, Modal, App } from "antd";
+import { Row, Col, Card, Statistic, Table, Form, Select, InputNumber, Input, Button, Tag, Space, Popconfirm, Modal, DatePicker, Checkbox, App } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import dayjs, { Dayjs } from "dayjs";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
 import { vnd } from "../lib/status";
 
+const TYPE_LABEL: Record<string, string> = { deposit: "Cọc", final: "Thu nốt", refund: "Hoàn" };
+const sym = (c?: string) => (c === "JPY" ? " ¥" : " ₫");
+const money = (n: number | string | null | undefined, c?: string) =>
+  n == null ? "-" : Number(n).toLocaleString(c === "JPY" ? "ja-JP" : "vi-VN") + sym(c);
+const signed = (n: number, c?: string) => (n < 0 ? "-" : "+") + Math.abs(n).toLocaleString(c === "JPY" ? "ja-JP" : "vi-VN") + sym(c);
+
 interface Order { id: string; code: string; status: string; }
 interface Wallet { id: string; name: string; balance: string; currency?: string; }
-interface Txn { id: string; amount: string; type: string; reconciled: boolean; wallet?: { name: string }; }
+interface StmtRow {
+  id: string; date: string; amount: number; type: string; reconciled: boolean; statementRef: string | null;
+  orderCode: string | null; customer: string | null; phone: string | null; trackings: string[]; balance: number;
+}
 interface CustomerDebt { customerId: string; code: string; name: string; phone: string | null; balance: number; updatedAt: string; }
 
 export default function Accounting() {
@@ -16,19 +26,43 @@ export default function Accounting() {
   const { message } = App.useApp();
   const [orders, setOrders] = useState<Order[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [txns, setTxns] = useState<Txn[]>([]);
+  const [stmt, setStmt] = useState<StmtRow[]>([]);
+  const [stmtBalance, setStmtBalance] = useState(0);
+  const [walletId, setWalletId] = useState<string | null>(null);
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const [custQ, setCustQ] = useState("");
+  const [trkQ, setTrkQ] = useState("");
+  const [onlyPending, setOnlyPending] = useState(false);
   const [debt, setDebt] = useState<string | null>(null);
   const [custDebts, setCustDebts] = useState<CustomerDebt[]>([]);
   const [walletModal, setWalletModal] = useState<{ mode: "create" | "edit"; w?: Wallet } | null>(null);
   const [form] = Form.useForm();
   const [wForm] = Form.useForm();
+  const payCur = Form.useWatch("currency", form) ?? "VND";
+  const payAmount = Form.useWatch("amount", form);
+  const payRate = Form.useWatch("exchangeRate", form);
+  const selWallet = wallets.find((w) => w.id === walletId);
+  const stmtCur = selWallet?.currency ?? "VND";
 
-  const loadRecon = () => api.get<Txn[]>("/accounting/reconcile").then((r) => setTxns(r.data)).catch(() => {});
-  const loadWallets = () => api.get<Wallet[]>("/accounting/wallets").then((r) => setWallets(r.data)).catch(() => {});
+  const loadStatement = (wid: string | null = walletId) => {
+    if (!wid) { setStmt([]); setStmtBalance(0); return; }
+    const params: Record<string, string> = { walletId: wid };
+    if (range) { params.from = range[0].format("YYYY-MM-DD"); params.to = range[1].format("YYYY-MM-DD"); }
+    if (custQ.trim()) params.customer = custQ.trim();
+    if (trkQ.trim()) params.tracking = trkQ.trim();
+    if (onlyPending) params.onlyPending = "true";
+    api.get<{ rows: StmtRow[]; balance: number }>("/accounting/statement", { params })
+      .then((r) => { setStmt(r.data.rows); setStmtBalance(r.data.balance); }).catch(() => {});
+  };
+  const loadWallets = () =>
+    api.get<Wallet[]>("/accounting/wallets").then((r) => {
+      setWallets(r.data);
+      if (!walletId && r.data[0]) { setWalletId(r.data[0].id); loadStatement(r.data[0].id); }
+    }).catch(() => {});
   const loadDebts = () => api.get<CustomerDebt[]>("/accounting/debts").then((r) => setCustDebts(r.data)).catch(() => {});
   useEffect(() => {
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
-    loadWallets(); loadRecon(); loadDebts();
+    loadWallets(); loadDebts();
   }, []);
 
   async function onOrderChange(id: string) {
@@ -40,13 +74,13 @@ export default function Accounting() {
   async function record() {
     const v = await form.validateFields();
     try {
-      await api.post(`/accounting/orders/${v.orderId}/payments`, { type: v.type, amountVnd: v.amountVnd, method: v.method, walletId: v.walletId });
-      message.success("Đã ghi"); form.resetFields(); setDebt(null); loadWallets(); loadRecon(); loadDebts();
+      await api.post(`/accounting/orders/${v.orderId}/payments`, { type: v.type, amount: v.amount, currency: v.currency, exchangeRate: v.exchangeRate, method: v.method, walletId: v.walletId });
+      message.success("Đã ghi"); form.resetFields(); setDebt(null); loadWallets(); loadStatement(); loadDebts();
     } catch { message.error("Ghi tiền thất bại (kiểm tra quyền hoàn tiền?)"); }
   }
 
   async function reconcile(id: string) {
-    try { await api.post(`/accounting/wallet-txns/${id}/reconcile`, {}); message.success("Đã đối soát"); loadRecon(); }
+    try { await api.post(`/accounting/wallet-txns/${id}/reconcile`, {}); message.success("Đã đối soát"); loadStatement(); }
     catch { message.error("Đối soát thất bại"); }
   }
 
@@ -71,7 +105,7 @@ export default function Accounting() {
     <PageContainer title="Kế toán" sub="Cọc, công nợ, ví và đối soát">
       <Row gutter={16} className="stat-cards">
         {wallets.map((w) => (
-          <Col xs={12} md={8} key={w.id}><Card><Statistic title={w.name} value={Number(w.balance)} suffix="₫" /></Card></Col>
+          <Col xs={12} md={8} key={w.id}><Card><Statistic title={w.name} value={Number(w.balance)} suffix={w.currency === "JPY" ? "¥" : "₫"} /></Card></Col>
         ))}
       </Row>
 
@@ -81,7 +115,8 @@ export default function Accounting() {
           <Table rowKey="id" size="small" pagination={false} dataSource={wallets}
             columns={[
               { title: "Tên ví", dataIndex: "name" },
-              { title: "Số dư", dataIndex: "balance", render: (v) => vnd(v) },
+              { title: "Tiền tệ", dataIndex: "currency", width: 80, render: (v) => v ?? "VND" },
+              { title: "Số dư", dataIndex: "balance", render: (v, w) => money(v, w.currency) },
               {
                 title: "", width: 110, render: (_, w) => (
                   <Space>
@@ -105,9 +140,18 @@ export default function Accounting() {
               { value: "deposit", label: "Cọc" }, { value: "final", label: "Thu nốt" }, { value: "refund", label: "Hoàn" },
             ]} />
           </Form.Item>
-          <Form.Item name="amountVnd" rules={[{ required: true }]}>
-            <InputNumber min={1} placeholder="Số tiền" style={{ width: 160 }} formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} />
+          <Form.Item name="amount" rules={[{ required: true }]}>
+            <InputNumber min={1} placeholder="Số tiền" style={{ width: 140 }} formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} />
           </Form.Item>
+          <Form.Item name="currency" initialValue="VND">
+            <Select style={{ width: 90 }} onChange={() => form.setFieldValue("walletId", undefined)}
+              options={[{ value: "VND", label: "₫ VND" }, { value: "JPY", label: "¥ JPY" }]} />
+          </Form.Item>
+          {payCur === "JPY" && (
+            <Form.Item name="exchangeRate" rules={[{ required: true, message: "Nhập tỉ giá" }]}>
+              <InputNumber min={1} placeholder="Tỉ giá ₫/¥" style={{ width: 120 }} />
+            </Form.Item>
+          )}
           <Form.Item name="method" initialValue="Tiền mặt">
             <Select style={{ width: 150 }} placeholder="Hình thức" options={[
               { value: "Tiền mặt", label: "Tiền mặt" }, { value: "Chuyển khoản", label: "Chuyển khoản" },
@@ -115,11 +159,15 @@ export default function Accounting() {
             ]} />
           </Form.Item>
           <Form.Item name="walletId">
-            <Select allowClear placeholder="Ví (tùy chọn)" style={{ width: 150 }} options={wallets.map((w) => ({ value: w.id, label: w.name }))} />
+            <Select allowClear placeholder={`Ví ${payCur} (tùy chọn)`} style={{ width: 160 }}
+              options={wallets.filter((w) => (w.currency ?? "VND") === payCur).map((w) => ({ value: w.id, label: w.name }))} />
           </Form.Item>
           <Form.Item><Button type="primary" htmlType="submit">Ghi</Button></Form.Item>
         </Form>
-        {debt !== null && <p style={{ marginTop: 12 }}>Công nợ còn lại: <b>{vnd(debt)}</b></p>}
+        {payCur === "JPY" && payAmount > 0 && payRate > 0 && (
+          <p style={{ marginTop: 12, color: "#64748b" }}>Quy đổi: {money(payAmount, "JPY")} × {payRate} ≈ <b>{money(payAmount * payRate)}</b></p>
+        )}
+        {debt !== null && <p style={{ marginTop: 4 }}>Công nợ còn lại: <b>{vnd(debt)}</b></p>}
       </Card>
 
       <Card title="Công nợ khách hàng" style={{ marginBottom: 16 }}
@@ -137,16 +185,63 @@ export default function Accounting() {
         />
       </Card>
 
-      <Card title="Đối soát ví — giao dịch chưa đối soát">
+      <Card
+        title="Sao kê & đối soát ví"
+        extra={<span>Số dư: <b>{money(stmtBalance, stmtCur)}</b></span>}
+      >
+        <Space wrap style={{ marginBottom: 16 }}>
+          <Select
+            style={{ width: 200 }} value={walletId ?? undefined} placeholder="Chọn ví"
+            onChange={(v) => { setWalletId(v); loadStatement(v); }}
+            options={wallets.map((w) => ({ value: w.id, label: w.name }))}
+          />
+          <DatePicker.RangePicker
+            value={range} format="DD/MM/YYYY" placeholder={["Từ ngày", "Đến ngày"]}
+            onChange={(v) => setRange(v as [Dayjs, Dayjs] | null)}
+          />
+          <Input.Search
+            allowClear placeholder="Tìm khách" style={{ width: 160 }}
+            value={custQ} onChange={(e) => setCustQ(e.target.value)} onSearch={() => loadStatement()}
+          />
+          <Input.Search
+            allowClear placeholder="Tìm tracking" style={{ width: 180 }}
+            value={trkQ} onChange={(e) => setTrkQ(e.target.value)} onSearch={() => loadStatement()}
+          />
+          <Checkbox checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)}>Chỉ chưa đối soát</Checkbox>
+          <Button type="primary" onClick={() => loadStatement()}>Lọc</Button>
+        </Space>
         <Table
-          rowKey="id" dataSource={txns} size="middle"
+          rowKey="id" dataSource={stmt} size="middle" scroll={{ x: 640 }}
+          pagination={{ pageSize: 50, showSizeChanger: true }}
           columns={[
-            { title: "Ví", dataIndex: ["wallet", "name"] },
-            { title: "Số tiền", dataIndex: "amount", render: (v) => vnd(v) },
-            { title: "Loại", dataIndex: "type", render: (v) => <Tag>{v}</Tag> },
-            { title: "", render: (_, t) => <Button size="small" onClick={() => reconcile(t.id)}>Đối soát</Button> },
+            { title: "Ngày", dataIndex: "date", width: 110, render: (v) => dayjs(v).format("DD/MM/YYYY") },
+            {
+              title: "Diễn giải",
+              render: (_, r: StmtRow) => (
+                <div>
+                  <div>
+                    {TYPE_LABEL[r.type] ?? r.type}
+                    {r.orderCode && <> · <b>{r.orderCode}</b></>}
+                    {!r.reconciled && <Tag color="orange" style={{ marginLeft: 8 }}>chờ đối soát</Tag>}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#888" }}>
+                    {r.customer ?? "-"}
+                    {r.trackings.length > 0 && <> · {r.trackings.join(", ")}</>}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              title: "Số tiền", dataIndex: "amount", align: "right", width: 140,
+              render: (v: number) => <span style={{ color: v < 0 ? "#cf1322" : "#3f8600" }}>{signed(v, stmtCur)}</span>,
+            },
+            { title: "Số dư", dataIndex: "balance", align: "right", width: 140, render: (v) => money(v, stmtCur) },
+            {
+              title: "", width: 100,
+              render: (_, r: StmtRow) => (r.reconciled ? <Tag color="green">đã đối soát</Tag> : <Button size="small" onClick={() => reconcile(r.id)}>Đối soát</Button>),
+            },
           ]}
-          locale={{ emptyText: "Không có giao dịch chờ" }}
+          locale={{ emptyText: "Không có giao dịch" }}
         />
       </Card>
 
