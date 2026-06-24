@@ -79,7 +79,7 @@ export default function Customers() {
             <Form.Item name="fbZalo" label="FB/Zalo"><Input /></Form.Item>
             <Form.Item name="address" label="Địa chỉ nhận hàng"><Input.TextArea rows={2} /></Form.Item>
             <Form.Item name="sheetUrl" label="Link Google Sheet riêng (share cho service account)"
-              extra="Dán link file Sheet của khách. Đơn sẽ tự ghi vào tab 'Hệ thống' trong file đó.">
+              extra="Dán link file Sheet của khách (1 khách 1 file). Đơn tự ghi vào tab theo tháng ('Tháng 7'...) trong file đó.">
               <Input placeholder="https://docs.google.com/spreadsheets/d/..." />
             </Form.Item>
             <Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item>
