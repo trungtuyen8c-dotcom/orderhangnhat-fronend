@@ -38,7 +38,7 @@ export default function Accounting() {
   const [walletModal, setWalletModal] = useState<{ mode: "create" | "edit"; w?: Wallet } | null>(null);
   const [fundBalance, setFundBalance] = useState(0);
   const [fundTxns, setFundTxns] = useState<any[]>([]);
-  const [fundModal, setFundModal] = useState<"topup" | "allocate" | null>(null);
+  const [fundModal, setFundModal] = useState<"topup" | "allocate" | "set" | null>(null);
   const [form] = Form.useForm();
   const [wForm] = Form.useForm();
   const [fForm] = Form.useForm();
@@ -75,6 +75,7 @@ export default function Accounting() {
     const amountYen = Number(v.man) * 10000;
     try {
       if (fundModal === "topup") await api.post("/accounting/fund/topup", { amountYen, rate: v.rate, note: v.note });
+      else if (fundModal === "set") await api.post("/accounting/fund/set", { amountYen, note: v.note });
       else await api.post("/accounting/fund/allocate", { walletId: v.walletId, amountYen, note: v.note });
       message.success("Đã lưu quỹ"); setFundModal(null); fForm.resetFields(); loadFund(); loadWallets();
     } catch (e: any) { message.error(e?.response?.data?.message ?? "Lưu quỹ thất bại"); }
@@ -129,6 +130,7 @@ export default function Accounting() {
           extra={<Space>
             <Button size="small" type="primary" onClick={() => setFundModal("topup")}>Nạp quỹ</Button>
             <Button size="small" onClick={() => setFundModal("allocate")}>Phân bổ vào thẻ</Button>
+            <Button size="small" onClick={() => setFundModal("set")}>Đặt số dư</Button>
           </Space>}>
           <Statistic value={fundBalance} suffix="¥" formatter={(v) => `${Number(v).toLocaleString("ja-JP")} (${(Number(v) / 10000).toLocaleString("ja-JP")} man)`} />
           <Table rowKey="id" size="small" pagination={{ pageSize: 8 }} style={{ marginTop: 12 }} dataSource={fundTxns}
@@ -288,7 +290,7 @@ export default function Accounting() {
         </Form>
       </Modal>
 
-      <Modal title={fundModal === "topup" ? "Nạp quỹ tổng" : "Phân bổ quỹ vào thẻ"} open={!!fundModal}
+      <Modal title={fundModal === "topup" ? "Nạp quỹ tổng" : fundModal === "set" ? "Đặt số dư quỹ" : "Phân bổ quỹ vào thẻ"} open={!!fundModal}
         onOk={submitFund} onCancel={() => { setFundModal(null); fForm.resetFields(); }} okText="Lưu">
         <Form form={fForm} layout="vertical">
           {fundModal === "allocate" && (

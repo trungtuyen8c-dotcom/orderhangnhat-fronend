@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Card, Table, Button, Modal, Form, Input, Select, Upload, Tag, App, Space, Popconfirm } from "antd";
+import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Upload, Tag, App, Space, Popconfirm } from "antd";
 import { PlusOutlined, UploadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { UploadFile } from "antd";
 import { api } from "../api";
@@ -7,7 +7,8 @@ import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
 
 interface S { id: string; code: string; status: string; _count?: { trackings: number; documents: number }; }
-interface Trk { id: string; code: string; review: string | null; order?: { code: string; customer?: { name: string } } | null; }
+interface Trk { id: string; code: string; review: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; orderId: string | null; order?: { code: string; customer?: { name: string } } | null; }
+interface Order { id: string; code: string; customer?: { name: string }; }
 const DOC_TYPES = ["invoice", "packing", "ingredient", "purchase_invoice", "tax"];
 
 export default function Shipments() {
@@ -15,6 +16,9 @@ export default function Shipments() {
   const { message } = App.useApp();
   const [rows, setRows] = useState<S[]>([]);
   const [trks, setTrks] = useState<Trk[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [openT, setOpenT] = useState(false);
+  const [tForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [openS, setOpenS] = useState(false);
   const [openD, setOpenD] = useState(false);
@@ -26,11 +30,24 @@ export default function Shipments() {
 
   const load = () => { setLoading(true); api.get<S[]>("/shipments").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
   const loadTrk = () => api.get<Trk[]>("/trackings").then((r) => setTrks(r.data)).catch(() => {});
-  useEffect(() => { load(); loadTrk(); }, []);
+  useEffect(() => {
+    load(); loadTrk();
+    api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
+  }, []);
 
   async function saveReview(id: string, review: string) {
     try { await api.patch(`/trackings/${id}`, { review }); message.success("Đã lưu đánh giá"); loadTrk(); }
     catch { message.error("Lưu đánh giá thất bại"); }
+  }
+
+  async function addTracking() {
+    const v = await tForm.validateFields();
+    try { await api.post("/trackings", v); message.success("Đã thêm tracking, đã gắn vào đơn"); setOpenT(false); tForm.resetFields(); loadTrk(); }
+    catch { message.error("Thêm tracking thất bại"); }
+  }
+  async function delTracking(id: string) {
+    try { await api.delete(`/trackings/${id}`); message.success("Đã xóa"); loadTrk(); }
+    catch { message.error("Xóa thất bại"); }
   }
 
   async function createShipment() {
@@ -90,24 +107,44 @@ export default function Shipments() {
 
       </Card>
 
-      <Card title="Đánh giá hàng (theo tracking)" style={{ marginTop: 16 }}>
+      <Card title="Tracking & Đánh giá hàng" style={{ marginTop: 16 }}
+        extra={can("trackings.create") && <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setOpenT(true)}>Thêm tracking</Button>}>
         <Table
           rowKey="id" dataSource={trks} size="small" pagination={{ pageSize: 20 }}
           columns={[
-            { title: "Mã tracking", dataIndex: "code", width: 180 },
-            { title: "Đơn", dataIndex: ["order", "code"], width: 110, render: (v) => v ?? "-" },
-            { title: "Khách", dataIndex: ["order", "customer", "name"], render: (v) => v ?? "-" },
+            { title: "Mã tracking", dataIndex: "code", width: 170 },
+            { title: "Đơn", dataIndex: ["order", "code"], width: 100, render: (v) => v ?? "-" },
+            { title: "Khách", dataIndex: ["order", "customer", "name"], width: 130, render: (v) => v ?? "-" },
+            { title: "Cân", dataIndex: "jpWeightKg", width: 70, render: (v) => (v ? Number(v) : "-") },
+            { title: "Đ/kg", dataIndex: "unitPriceVndPerKg", width: 90, render: (v) => (v ? Number(v).toLocaleString("vi-VN") : "-") },
             {
-              title: "Đánh giá", dataIndex: "review", width: 360,
+              title: "Đánh giá", dataIndex: "review",
               render: (v, t) => (
-                <Input defaultValue={v ?? ""} placeholder="Nhập đánh giá / tình trạng hàng"
+                <Input defaultValue={v ?? ""} placeholder="Đánh giá / tình trạng hàng"
                   onBlur={(e) => { if ((e.target.value || "") !== (v ?? "")) saveReview(t.id, e.target.value); }} />
               ),
             },
+            ...(can("trackings.delete") ? [{
+              title: "", width: 50, render: (_: any, t: Trk) => (
+                <Popconfirm title="Xóa tracking?" onConfirm={() => delTracking(t.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
+              ),
+            }] : []),
           ]}
           locale={{ emptyText: "Chưa có tracking" }}
         />
       </Card>
+
+      <Modal title="Thêm tracking" open={openT} onOk={addTracking} onCancel={() => setOpenT(false)} okText="Lưu">
+        <Form form={tForm} layout="vertical">
+          <Form.Item name="code" label="Mã vận đơn" rules={[{ required: true }]}><Input placeholder="Mã tracking" /></Form.Item>
+          <Form.Item name="orderId" label="Gắn vào đơn" rules={[{ required: true }]}>
+            <Select showSearch optionFilterProp="label" placeholder="Chọn đơn"
+              options={orders.map((o) => ({ value: o.id, label: `${o.code} - ${o.customer?.name ?? ""}` }))} />
+          </Form.Item>
+          <Form.Item name="jpWeightKg" label="Cân (kg)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="unitPriceVndPerKg" label="Đơn giá ship (đ/kg)"><InputNumber min={0} step={1000} style={{ width: "100%" }} /></Form.Item>
+        </Form>
+      </Modal>
 
       <Modal title="Tạo chuyến" open={openS} onOk={createShipment} onCancel={() => setOpenS(false)} okText="Lưu">
         <Form form={sForm} layout="vertical"><Form.Item name="code" label="Mã chuyến" rules={[{ required: true }]}><Input /></Form.Item></Form>
