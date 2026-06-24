@@ -35,7 +35,7 @@ const FEES: { amt: string; cur: string; sign: 1 | -1 }[] = [
 ];
 function computeVnd(v: any): number | null {
   const rate = Number(v?.exchangeRate ?? 0);
-  const subtotal = (v?.items ?? []).reduce((s: number, i: any) => s + Number(i?.qty ?? 0) * Number(i?.unitPriceJpy ?? 0), 0);
+  const subtotal = (v?.items ?? []).reduce((s: number, i: any) => s + Number(i?.qty ?? 0) * Number(i?.unitPriceJpy ?? 0) + Number(i?.shipJpy ?? 0), 0);
   const n = (x: any) => Number(x ?? 0);
   const jpyFee = FEES.some((f) => v?.[f.cur] === "JPY" && n(v?.[f.amt]) > 0);
   if (!rate && (subtotal > 0 || jpyFee)) return null;
@@ -60,8 +60,6 @@ export default function Orders() {
   const [editId, setEditId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any | null>(null);
   const [form] = Form.useForm();
-  const watch = Form.useWatch([], form);
-  const previewVnd = computeVnd(watch);
 
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
@@ -294,9 +292,16 @@ export default function Orders() {
             </Form.Item>
           </Space>
           <Divider style={{ margin: "8px 0" }} />
-          <div style={{ textAlign: "right", fontSize: 16 }}>
-            Tổng VND: <b>{previewVnd == null ? "(nhập tỉ giá)" : vnd(previewVnd)}</b>
-          </div>
+          <Form.Item noStyle shouldUpdate>
+            {() => {
+              const p = computeVnd(form.getFieldsValue(true));
+              return (
+                <div style={{ textAlign: "right", fontSize: 16 }}>
+                  Tổng VND: <b>{p == null ? "(nhập tỉ giá)" : vnd(p)}</b>
+                </div>
+              );
+            }}
+          </Form.Item>
         </Form>
       </Modal>
 
