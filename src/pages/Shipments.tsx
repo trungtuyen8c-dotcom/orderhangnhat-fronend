@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Upload, Tag, App, Space, Popconfirm, DatePicker } from "antd";
+import { useEffect, useMemo, useState } from "react";
+import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Upload, Tag, App, Space, Popconfirm, DatePicker, Segmented } from "antd";
 import { PlusOutlined, UploadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { UploadFile } from "antd";
@@ -20,7 +20,21 @@ export default function Shipments() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [openT, setOpenT] = useState(false);
   const [tForm] = Form.useForm();
+  const [trkQ, setTrkQ] = useState("");
+  const [revF, setRevF] = useState<"todo" | "done" | "all">("todo");
   const [loading, setLoading] = useState(false);
+
+  const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
+  const shownTrks = useMemo(() => {
+    const nq = norm(trkQ.trim());
+    return trks.filter((t) => {
+      if (revF === "todo" && t.review) return false;
+      if (revF === "done" && !t.review) return false;
+      if (!nq) return true;
+      return norm([t.code, t.order?.code, t.order?.customer?.name].filter(Boolean).join(" ")).includes(nq);
+    });
+  }, [trks, trkQ, revF]);
+  const todoCount = useMemo(() => trks.filter((t) => !t.review).length, [trks]);
   const [openS, setOpenS] = useState(false);
   const [openD, setOpenD] = useState(false);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
@@ -109,10 +123,16 @@ export default function Shipments() {
 
       </Card>
 
-      <Card title="Tracking & Đánh giá hàng" style={{ marginTop: 16 }}
+      <Card title={`Tracking & Đánh giá hàng (chưa đánh giá: ${todoCount})`} style={{ marginTop: 16 }}
         extra={can("trackings.create") && <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setOpenT(true)}>Thêm tracking</Button>}>
+        <Space style={{ marginBottom: 12 }} wrap>
+          <Input.Search allowClear placeholder="Tìm mã tracking / đơn / khách" style={{ width: 300 }}
+            value={trkQ} onChange={(e) => setTrkQ(e.target.value)} />
+          <Segmented value={revF} onChange={(v) => setRevF(v as any)}
+            options={[{ label: "Chưa đánh giá", value: "todo" }, { label: "Đã đánh giá", value: "done" }, { label: "Tất cả", value: "all" }]} />
+        </Space>
         <Table
-          rowKey="id" dataSource={trks} size="small" pagination={{ pageSize: 20 }}
+          rowKey="id" dataSource={shownTrks} size="small" pagination={{ pageSize: 20, showSizeChanger: true }}
           columns={[
             { title: "Mã tracking", dataIndex: "code", width: 150 },
             { title: "Link", dataIndex: "url", width: 60, render: (v) => (v ? <a href={v} target="_blank" rel="noreferrer">Xem</a> : "-") },
