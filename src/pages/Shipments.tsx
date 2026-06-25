@@ -94,6 +94,10 @@ export default function Shipments() {
     try { await api.patch(`/trackings/${id}`, { review }); message.success("Đã lưu đánh giá"); loadTrk(); }
     catch { message.error("Lưu đánh giá thất bại"); }
   }
+  async function saveCode(id: string, code: string) {
+    try { await api.patch(`/trackings/${id}`, { code }); message.success("Đã lưu mã tracking"); loadTrk(); }
+    catch { message.error("Lưu mã thất bại"); }
+  }
 
   async function addTracking() {
     const v = await tForm.validateFields();
@@ -184,7 +188,10 @@ export default function Shipments() {
             { title: "Tình trạng", width: 130, render: (_, t) => { const s = trkStatus(t); return <Badge color={s.color} text={s.label} />; } },
             { title: "Link", dataIndex: "url", width: 200, ellipsis: true,
               render: (v) => (v ? <a href={v} target="_blank" rel="noreferrer" title={v}>{v}</a> : "-") },
-            { title: "Mã tracking", dataIndex: "code", width: 150 },
+            { title: "Mã tracking", dataIndex: "code", width: 160, render: (v, t) => (
+              <Input defaultValue={v ?? ""} placeholder="Điền mã" size="small"
+                onBlur={(e) => { if ((e.target.value || "") !== (v ?? "")) saveCode(t.id, e.target.value.trim()); }} />
+            ) },
             {
               title: "Đánh giá", dataIndex: "review", width: 200,
               render: (v, t) => (
