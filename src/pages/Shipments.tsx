@@ -181,28 +181,29 @@ export default function Shipments() {
         </Space>
         <Table
           rowKey="id" dataSource={shownTrks} size="small" pagination={{ pageSize: 20, showSizeChanger: true }}
+          scroll={{ x: 1100 }}
           columns={[
-            { title: "Khách", dataIndex: ["order", "customer", "name"], width: 110, render: (v) => v ?? "-" },
-            { title: "Đơn", dataIndex: ["order", "code"], width: 90, render: (v) => v ?? "-" },
-            { title: "Đóng hàng về", dataIndex: "packedAt", width: 110, render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
-            { title: "Tình trạng", width: 130, render: (_, t) => { const s = trkStatus(t); return <Badge color={s.color} text={s.label} />; } },
-            { title: "Link", dataIndex: "url", width: 200, ellipsis: true,
-              render: (v) => (v ? <a href={v} target="_blank" rel="noreferrer" title={v}>{v}</a> : "-") },
-            { title: "Mã tracking", dataIndex: "code", width: 160, render: (v, t) => (
+            { title: "Khách", dataIndex: ["order", "customer", "name"], width: 100, ellipsis: true, render: (v) => v ?? "-" },
+            { title: "Đơn", dataIndex: ["order", "code"], width: 85, render: (v) => v ?? "-" },
+            { title: "Đóng về", dataIndex: "packedAt", width: 90, render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
+            { title: "Tình trạng", width: 120, render: (_, t) => { const s = trkStatus(t); return <Badge color={s.color} text={s.label} />; } },
+            { title: "Link", dataIndex: "url", width: 55, align: "center",
+              render: (v) => (v ? <a href={v} target="_blank" rel="noreferrer" title={v}>Xem</a> : "-") },
+            { title: "Mã tracking", dataIndex: "code", width: 150, render: (v, t) => (
               <Input defaultValue={v ?? ""} placeholder="Điền mã" size="small"
                 onBlur={(e) => { if ((e.target.value || "") !== (v ?? "")) saveCode(t.id, e.target.value.trim()); }} />
             ) },
             {
-              title: "Đánh giá", dataIndex: "review", width: 200,
+              title: "Đánh giá", dataIndex: "review", width: 180,
               render: (v, t) => (
-                <Input defaultValue={v ?? ""} placeholder="Đánh giá / tình trạng hàng"
+                <Input size="small" defaultValue={v ?? ""} placeholder="Đánh giá hàng"
                   onBlur={(e) => { if ((e.target.value || "") !== (v ?? "")) saveReview(t.id, e.target.value); }} />
               ),
             },
-            { title: "Cân", dataIndex: "jpWeightKg", width: 60, render: (v) => (v ? Number(v) : "-") },
-            { title: "Đ/kg", dataIndex: "unitPriceVndPerKg", width: 80, render: (v) => (v ? Number(v).toLocaleString("vi-VN") : "-") },
+            { title: "Cân", dataIndex: "jpWeightKg", width: 55, render: (v) => (v ? Number(v) : "-") },
+            { title: "Đ/kg", dataIndex: "unitPriceVndPerKg", width: 75, render: (v) => (v ? Number(v).toLocaleString("vi-VN") : "-") },
             ...(can("trackings.delete") ? [{
-              title: "", width: 50, render: (_: any, t: Trk) => (
+              title: "", width: 44, fixed: "right" as const, render: (_: any, t: Trk) => (
                 <Popconfirm title="Xóa tracking?" onConfirm={() => delTracking(t.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
               ),
             }] : []),

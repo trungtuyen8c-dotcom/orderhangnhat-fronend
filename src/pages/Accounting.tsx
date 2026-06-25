@@ -40,6 +40,7 @@ export default function Accounting() {
   const [fundTxns, setFundTxns] = useState<any[]>([]);
   const [fundModal, setFundModal] = useState<"topup" | "allocate" | "set" | "cashback" | null>(null);
   const [pendingDeps, setPendingDeps] = useState<any[]>([]);
+  const [custSummary, setCustSummary] = useState<any[]>([]);
   const [form] = Form.useForm();
   const [wForm] = Form.useForm();
   const [fForm] = Form.useForm();
@@ -67,13 +68,14 @@ export default function Accounting() {
   const loadDebts = () => api.get<CustomerDebt[]>("/accounting/debts").then((r) => setCustDebts(r.data)).catch(() => {});
   const loadFund = () => api.get("/accounting/fund").then((r) => { setFundBalance(r.data.balance); setFundTxns(r.data.txns); }).catch(() => {});
   const loadPending = () => api.get<any[]>("/accounting/deposits/pending").then((r) => setPendingDeps(r.data)).catch(() => {});
+  const loadSummary = () => api.get<any[]>("/accounting/customer-summary").then((r) => setCustSummary(r.data)).catch(() => {});
   useEffect(() => {
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
-    loadWallets(); loadDebts(); loadFund(); loadPending();
+    loadWallets(); loadDebts(); loadFund(); loadPending(); loadSummary();
   }, []);
 
   async function confirmDep(id: string) {
-    try { await api.post(`/accounting/customer-deposits/${id}/confirm`); message.success("Đã xác nhận tiền vào"); loadPending(); loadWallets(); loadDebts(); }
+    try { await api.post(`/accounting/customer-deposits/${id}/confirm`); message.success("Đã xác nhận tiền vào"); loadPending(); loadWallets(); loadDebts(); loadSummary(); }
     catch { message.error("Xác nhận thất bại"); }
   }
 
@@ -152,6 +154,28 @@ export default function Accounting() {
             ]} />
         </Card>
       )}
+
+      <Card title="Tổng quan công nợ khách (mua / cọc / còn nợ)" style={{ marginBottom: 16 }}>
+        <Table rowKey="customerId" size="small" pagination={{ pageSize: 15 }} dataSource={custSummary}
+          locale={{ emptyText: "Chưa có dữ liệu" }}
+          summary={(data) => {
+            const m = data.reduce((s, r: any) => s + r.mua, 0), c = data.reduce((s, r: any) => s + r.coc, 0);
+            return (
+              <Table.Summary.Row>
+                <Table.Summary.Cell index={0}><b>Tổng</b></Table.Summary.Cell>
+                <Table.Summary.Cell index={1} align="right"><b>{vnd(m)}</b></Table.Summary.Cell>
+                <Table.Summary.Cell index={2} align="right"><b>{vnd(c)}</b></Table.Summary.Cell>
+                <Table.Summary.Cell index={3} align="right"><b style={{ color: m - c > 0 ? "#dc2626" : "#16a34a" }}>{vnd(m - c)}</b></Table.Summary.Cell>
+              </Table.Summary.Row>
+            );
+          }}
+          columns={[
+            { title: "Khách", render: (_, r: any) => `${r.name}${r.code ? ` (${r.code})` : ""}` },
+            { title: "Tổng mua", dataIndex: "mua", align: "right", render: (v) => vnd(v) },
+            { title: "Đã cọc/trả", dataIndex: "coc", align: "right", render: (v) => <span style={{ color: "#16a34a" }}>{vnd(v)}</span> },
+            { title: "Còn nợ", dataIndex: "no", align: "right", render: (v) => <b style={{ color: v > 0 ? "#dc2626" : "#2563eb" }}>{v > 0 ? vnd(v) : `dư ${vnd(-v)}`}</b> },
+          ]} />
+      </Card>
 
       {can("wallets.manage") && (
         <Card title="Quỹ tổng (vốn mua hàng - JPY)" style={{ marginBottom: 16 }}
