@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Upload, Tag, App, Space, Popconfirm, DatePicker, Segmented, Badge } from "antd";
+import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Upload, Tag, App, Space, Popconfirm, DatePicker, Segmented, Badge, Divider } from "antd";
 import { PlusOutlined, UploadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { UploadFile } from "antd";
@@ -10,6 +10,20 @@ import { PageContainer } from "../components/PageContainer";
 interface S { id: string; code: string; status: string; _count?: { trackings: number; documents: number }; }
 interface Trk { id: string; code: string; review: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; url: string | null; packedAt: string | null; vnTrackingCode: string | null; orderId: string | null; order?: { code: string; customer?: { name: string } } | null; }
 interface Order { id: string; code: string; customer?: { name: string }; }
+
+// Apps Script dán vào file kho: kho gõ mã cột E -> gọi webhook -> quét ngay
+const APPS_SCRIPT = (hookUrl: string) => `function onTrackingEdit(e) {
+  if (!e || !e.range || e.range.getColumn() !== 5) return; // chỉ cột E (Mã TRACKING)
+  UrlFetchApp.fetch("${hookUrl}", { method: "post", muteHttpExceptions: true });
+}
+
+// Chạy hàm này 1 lần để cài trigger (cấp quyền khi được hỏi)
+function setupTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === "onTrackingEdit") ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger("onTrackingEdit").forSpreadsheet(SpreadsheetApp.getActive()).onEdit().create();
+}`;
 
 // Trạng thái kiện suy ra từ dữ liệu -> chấm màu
 function trkStatus(t: { vnTrackingCode: string | null; packedAt: string | null; jpWeightKg: string | null }) {
@@ -54,6 +68,7 @@ export default function Shipments() {
   const [eForm] = Form.useForm();
   const [openK, setOpenK] = useState(false);
   const [khoUrl, setKhoUrl] = useState("");
+  const [hookUrl, setHookUrl] = useState("");
   const [syncing, setSyncing] = useState(false);
 
   const load = () => { setLoading(true); api.get<S[]>("/shipments").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
@@ -61,7 +76,7 @@ export default function Shipments() {
   useEffect(() => {
     load(); loadTrk();
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
-    if (can("system.manage_settings")) api.get<{ sheetUrl: string }>("/warehouse/pack-config").then((r) => setKhoUrl(r.data.sheetUrl ?? "")).catch(() => {});
+    if (can("system.manage_settings")) api.get<{ sheetUrl: string; hookUrl: string }>("/warehouse/pack-config").then((r) => { setKhoUrl(r.data.sheetUrl ?? ""); setHookUrl(r.data.hookUrl ?? ""); }).catch(() => {});
   }, []);
 
   async function saveKhoCfg() {
@@ -227,12 +242,18 @@ export default function Shipments() {
         </Form>
       </Modal>
 
-      <Modal title="Cài đặt file kho (bên đóng hàng)" open={openK} onOk={saveKhoCfg} onCancel={() => setOpenK(false)} okText="Lưu">
+      <Modal title="Cài đặt file kho (bên đóng hàng)" open={openK} onOk={saveKhoCfg} onCancel={() => setOpenK(false)} okText="Lưu" width={680}>
         <p style={{ marginTop: 0, color: "#666" }}>
-          Dán link Google Sheet của bên đóng hàng. File phải share quyền xem cho service account.
-          Cột E = mã tracking; ngày đóng lấy theo tên tab ("26.6" = 26/6). Hệ thống quét mỗi 15 phút, mã trùng tracking sẽ chuyển 🟠 "Đóng hàng về".
+          Dán link Google Sheet của bên đóng hàng. File phải share quyền Xem cho service account.
+          Cột E = mã tracking; ngày đóng lấy theo tên tab ("26.6" = 26/6). Hệ thống tự quét 2 phút/lần, mã trùng tracking sẽ chuyển 🟠 "Đóng hàng về".
         </p>
         <Input placeholder="https://docs.google.com/spreadsheets/d/..." value={khoUrl} onChange={(e) => setKhoUrl(e.target.value)} />
+
+        <Divider titlePlacement="start" style={{ marginTop: 20 }}>Cập nhật TỨC THÌ (tuỳ chọn) — Apps Script</Divider>
+        <p style={{ marginTop: 0, color: "#666" }}>
+          Muốn kho gõ mã là cam ngay (không đợi 2 phút): mở file kho → <b>Tiện ích mở rộng → Apps Script</b> → dán đoạn dưới → bấm <b>Lưu</b> → chạy hàm <b>setupTrigger</b> 1 lần (cấp quyền khi được hỏi).
+        </p>
+        <Input.TextArea readOnly rows={10} value={hookUrl ? APPS_SCRIPT(hookUrl) : ""} onFocus={(e) => e.target.select()} style={{ fontFamily: "monospace", fontSize: 12 }} />
       </Modal>
     </PageContainer>
   );
