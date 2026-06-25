@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Upload, Tag, App, Space, Popconfirm } from "antd";
+import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Upload, Tag, App, Space, Popconfirm, DatePicker } from "antd";
 import { PlusOutlined, UploadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
 import type { UploadFile } from "antd";
 import { api } from "../api";
 import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
 
 interface S { id: string; code: string; status: string; _count?: { trackings: number; documents: number }; }
-interface Trk { id: string; code: string; review: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; orderId: string | null; order?: { code: string; customer?: { name: string } } | null; }
+interface Trk { id: string; code: string; review: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; url: string | null; packedAt: string | null; orderId: string | null; order?: { code: string; customer?: { name: string } } | null; }
 interface Order { id: string; code: string; customer?: { name: string }; }
 const DOC_TYPES = ["invoice", "packing", "ingredient", "purchase_invoice", "tax"];
 
@@ -42,7 +43,8 @@ export default function Shipments() {
 
   async function addTracking() {
     const v = await tForm.validateFields();
-    try { await api.post("/trackings", v); message.success("Đã thêm tracking, đã gắn vào đơn"); setOpenT(false); tForm.resetFields(); loadTrk(); }
+    const body = { ...v, packedAt: v.packedAt ? v.packedAt.toISOString() : undefined };
+    try { await api.post("/trackings", body); message.success("Đã thêm tracking, đã gắn vào đơn"); setOpenT(false); tForm.resetFields(); loadTrk(); }
     catch { message.error("Thêm tracking thất bại"); }
   }
   async function delTracking(id: string) {
@@ -112,11 +114,13 @@ export default function Shipments() {
         <Table
           rowKey="id" dataSource={trks} size="small" pagination={{ pageSize: 20 }}
           columns={[
-            { title: "Mã tracking", dataIndex: "code", width: 170 },
-            { title: "Đơn", dataIndex: ["order", "code"], width: 100, render: (v) => v ?? "-" },
-            { title: "Khách", dataIndex: ["order", "customer", "name"], width: 130, render: (v) => v ?? "-" },
-            { title: "Cân", dataIndex: "jpWeightKg", width: 70, render: (v) => (v ? Number(v) : "-") },
-            { title: "Đ/kg", dataIndex: "unitPriceVndPerKg", width: 90, render: (v) => (v ? Number(v).toLocaleString("vi-VN") : "-") },
+            { title: "Mã tracking", dataIndex: "code", width: 150 },
+            { title: "Link", dataIndex: "url", width: 60, render: (v) => (v ? <a href={v} target="_blank" rel="noreferrer">Xem</a> : "-") },
+            { title: "Đóng hàng về", dataIndex: "packedAt", width: 110, render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
+            { title: "Đơn", dataIndex: ["order", "code"], width: 90, render: (v) => v ?? "-" },
+            { title: "Khách", dataIndex: ["order", "customer", "name"], width: 110, render: (v) => v ?? "-" },
+            { title: "Cân", dataIndex: "jpWeightKg", width: 60, render: (v) => (v ? Number(v) : "-") },
+            { title: "Đ/kg", dataIndex: "unitPriceVndPerKg", width: 80, render: (v) => (v ? Number(v).toLocaleString("vi-VN") : "-") },
             {
               title: "Đánh giá", dataIndex: "review",
               render: (v, t) => (
@@ -141,6 +145,8 @@ export default function Shipments() {
             <Select showSearch optionFilterProp="label" placeholder="Chọn đơn"
               options={orders.map((o) => ({ value: o.id, label: `${o.code} - ${o.customer?.name ?? ""}` }))} />
           </Form.Item>
+          <Form.Item name="url" label="Link sản phẩm (để bấm xem khi đánh giá)"><Input placeholder="https://..." /></Form.Item>
+          <Form.Item name="packedAt" label="Ngày đóng hàng về" initialValue={dayjs()}><DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="jpWeightKg" label="Cân (kg)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="unitPriceVndPerKg" label="Đơn giá ship (đ/kg)"><InputNumber min={0} step={1000} style={{ width: "100%" }} /></Form.Item>
         </Form>
