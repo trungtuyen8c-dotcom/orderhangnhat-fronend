@@ -178,21 +178,22 @@ export default function Shipments() {
         <Table
           rowKey="id" dataSource={shownTrks} size="small" pagination={{ pageSize: 20, showSizeChanger: true }}
           columns={[
-            { title: "Tình trạng", width: 130, render: (_, t) => { const s = trkStatus(t); return <Badge color={s.color} text={s.label} />; } },
-            { title: "Mã tracking", dataIndex: "code", width: 150 },
-            { title: "Link", dataIndex: "url", width: 60, render: (v) => (v ? <a href={v} target="_blank" rel="noreferrer">Xem</a> : "-") },
-            { title: "Đóng hàng về", dataIndex: "packedAt", width: 110, render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
-            { title: "Đơn", dataIndex: ["order", "code"], width: 90, render: (v) => v ?? "-" },
             { title: "Khách", dataIndex: ["order", "customer", "name"], width: 110, render: (v) => v ?? "-" },
-            { title: "Cân", dataIndex: "jpWeightKg", width: 60, render: (v) => (v ? Number(v) : "-") },
-            { title: "Đ/kg", dataIndex: "unitPriceVndPerKg", width: 80, render: (v) => (v ? Number(v).toLocaleString("vi-VN") : "-") },
+            { title: "Đơn", dataIndex: ["order", "code"], width: 90, render: (v) => v ?? "-" },
+            { title: "Đóng hàng về", dataIndex: "packedAt", width: 110, render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
+            { title: "Tình trạng", width: 130, render: (_, t) => { const s = trkStatus(t); return <Badge color={s.color} text={s.label} />; } },
+            { title: "Link", dataIndex: "url", width: 200, ellipsis: true,
+              render: (v) => (v ? <a href={v} target="_blank" rel="noreferrer" title={v}>{v}</a> : "-") },
+            { title: "Mã tracking", dataIndex: "code", width: 150 },
             {
-              title: "Đánh giá", dataIndex: "review",
+              title: "Đánh giá", dataIndex: "review", width: 200,
               render: (v, t) => (
                 <Input defaultValue={v ?? ""} placeholder="Đánh giá / tình trạng hàng"
                   onBlur={(e) => { if ((e.target.value || "") !== (v ?? "")) saveReview(t.id, e.target.value); }} />
               ),
             },
+            { title: "Cân", dataIndex: "jpWeightKg", width: 60, render: (v) => (v ? Number(v) : "-") },
+            { title: "Đ/kg", dataIndex: "unitPriceVndPerKg", width: 80, render: (v) => (v ? Number(v).toLocaleString("vi-VN") : "-") },
             ...(can("trackings.delete") ? [{
               title: "", width: 50, render: (_: any, t: Trk) => (
                 <Popconfirm title="Xóa tracking?" onConfirm={() => delTracking(t.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
