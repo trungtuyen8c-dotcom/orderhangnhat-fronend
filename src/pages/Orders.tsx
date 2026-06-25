@@ -124,7 +124,7 @@ export default function Orders() {
 
   async function submitOrder() {
     const v = await form.validateFields();
-    v.items = (v.items ?? []).map((i: any) => ({ ...i, purchaseDate: i.purchaseDate ? i.purchaseDate.toISOString() : undefined }));
+    v.items = (v.items ?? []).map((i: any) => ({ ...i, purchaseDate: i.purchaseDate ? i.purchaseDate.format("YYYY-MM-DD") : undefined }));
     try {
       if (editId) await api.patch(`/orders/${editId}`, v);
       else await api.post("/orders", v);
