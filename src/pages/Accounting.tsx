@@ -38,7 +38,7 @@ export default function Accounting() {
   const [walletModal, setWalletModal] = useState<{ mode: "create" | "edit"; w?: Wallet } | null>(null);
   const [fundBalance, setFundBalance] = useState(0);
   const [fundTxns, setFundTxns] = useState<any[]>([]);
-  const [fundModal, setFundModal] = useState<"topup" | "allocate" | "set" | null>(null);
+  const [fundModal, setFundModal] = useState<"topup" | "allocate" | "set" | "cashback" | null>(null);
   const [pendingDeps, setPendingDeps] = useState<any[]>([]);
   const [form] = Form.useForm();
   const [wForm] = Form.useForm();
@@ -83,6 +83,7 @@ export default function Accounting() {
     try {
       if (fundModal === "topup") await api.post("/accounting/fund/topup", { amountYen, rate: v.rate, note: v.note });
       else if (fundModal === "set") await api.post("/accounting/fund/set", { amountYen, note: v.note });
+      else if (fundModal === "cashback") await api.post("/accounting/cashback", { walletId: v.walletId, amountYen, note: v.note });
       else await api.post("/accounting/fund/allocate", { walletId: v.walletId, amountYen, note: v.note });
       message.success("Đã lưu quỹ"); setFundModal(null); fForm.resetFields(); loadFund(); loadWallets();
     } catch (e: any) { message.error(e?.response?.data?.message ?? "Lưu quỹ thất bại"); }
@@ -157,6 +158,7 @@ export default function Accounting() {
           extra={<Space>
             <Button size="small" type="primary" onClick={() => setFundModal("topup")}>Nạp quỹ</Button>
             <Button size="small" onClick={() => setFundModal("allocate")}>Phân bổ vào thẻ</Button>
+            <Button size="small" onClick={() => setFundModal("cashback")}>Cashback vào thẻ</Button>
             <Button size="small" onClick={() => setFundModal("set")}>Đặt số dư</Button>
           </Space>}>
           <Statistic value={fundBalance} suffix="¥" formatter={(v) => `${Number(v).toLocaleString("ja-JP")} (${(Number(v) / 10000).toLocaleString("ja-JP")} man)`} />
@@ -164,8 +166,12 @@ export default function Accounting() {
             locale={{ emptyText: "Chưa có giao dịch quỹ" }}
             columns={[
               { title: "Ngày", dataIndex: "createdAt", render: (v) => new Date(v).toLocaleDateString("vi-VN") },
-              { title: "Loại", dataIndex: "type", render: (v) => <Tag color={v === "topup" ? "green" : "blue"}>{v === "topup" ? "Nạp quỹ" : "Phân bổ thẻ"}</Tag> },
-              { title: "Số tiền", dataIndex: "amountYen", render: (v, r) => (r.type === "topup" ? "+" : "-") + Number(v).toLocaleString("ja-JP") + " ¥ (" + (Number(v) / 10000) + " man)" },
+              { title: "Loại", dataIndex: "type", render: (v) => {
+                const m: any = { topup: ["green", "Nạp quỹ"], allocate: ["blue", "Phân bổ thẻ"], cashback: ["gold", "Cashback"], set: ["default", "Đặt số dư"] };
+                const [c, l] = m[v] ?? ["default", v];
+                return <Tag color={c}>{l}</Tag>;
+              } },
+              { title: "Số tiền", dataIndex: "amountYen", render: (v, r) => ((r.type === "topup" || r.type === "cashback") ? "+" : r.type === "allocate" ? "-" : "") + Number(v).toLocaleString("ja-JP") + " ¥ (" + (Number(v) / 10000) + " man)" },
               { title: "Tỉ giá", dataIndex: "rate", render: (v) => (v ? Number(v).toLocaleString("vi-VN") : "-") },
               { title: "Thẻ", dataIndex: "walletId", render: (v) => (v ? wallets.find((w) => w.id === v)?.name ?? "-" : "-") },
               { title: "Ghi chú", dataIndex: "note", render: (v) => v ?? "-" },
@@ -317,10 +323,10 @@ export default function Accounting() {
         </Form>
       </Modal>
 
-      <Modal title={fundModal === "topup" ? "Nạp quỹ tổng" : fundModal === "set" ? "Đặt số dư quỹ" : "Phân bổ quỹ vào thẻ"} open={!!fundModal}
+      <Modal title={fundModal === "topup" ? "Nạp quỹ tổng" : fundModal === "set" ? "Đặt số dư quỹ" : fundModal === "cashback" ? "Cashback vào thẻ (JPY)" : "Phân bổ quỹ vào thẻ"} open={!!fundModal}
         onOk={submitFund} onCancel={() => { setFundModal(null); fForm.resetFields(); }} okText="Lưu">
         <Form form={fForm} layout="vertical">
-          {fundModal === "allocate" && (
+          {(fundModal === "allocate" || fundModal === "cashback") && (
             <Form.Item name="walletId" label="Thẻ nhận" rules={[{ required: true }]}>
               <Select placeholder="Chọn thẻ" options={wallets.map((w) => ({ value: w.id, label: w.name }))} />
             </Form.Item>
