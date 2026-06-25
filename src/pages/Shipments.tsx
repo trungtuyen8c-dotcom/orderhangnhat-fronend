@@ -52,13 +52,28 @@ export default function Shipments() {
   const [sForm] = Form.useForm();
   const [dForm] = Form.useForm();
   const [eForm] = Form.useForm();
+  const [openK, setOpenK] = useState(false);
+  const [khoUrl, setKhoUrl] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
   const load = () => { setLoading(true); api.get<S[]>("/shipments").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
   const loadTrk = () => api.get<Trk[]>("/trackings").then((r) => setTrks(r.data)).catch(() => {});
   useEffect(() => {
     load(); loadTrk();
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
+    if (can("system.manage_settings")) api.get<{ sheetUrl: string }>("/warehouse/pack-config").then((r) => setKhoUrl(r.data.sheetUrl ?? "")).catch(() => {});
   }, []);
+
+  async function saveKhoCfg() {
+    try { await api.put("/warehouse/pack-config", { sheetUrl: khoUrl }); message.success("Đã lưu link file kho"); setOpenK(false); }
+    catch (e: any) { message.error(e?.response?.data?.message ?? "Lưu thất bại"); }
+  }
+  async function syncPack() {
+    setSyncing(true);
+    try { const r = await api.post<{ matched: number; updated: number }>("/warehouse/sync-pack"); message.success(`Quét kho xong: ${r.data.updated} kiện đóng hàng về`); loadTrk(); }
+    catch { message.error("Quét kho thất bại"); }
+    finally { setSyncing(false); }
+  }
 
   async function saveReview(id: string, review: string) {
     try { await api.patch(`/trackings/${id}`, { review }); message.success("Đã lưu đánh giá"); loadTrk(); }
@@ -108,6 +123,8 @@ export default function Shipments() {
     <PageContainer
       title="Chuyến & Chứng từ & Đánh giá" sub="Gom chuyến, chứng từ GA và đánh giá hàng theo tracking"
       extra={<Space>
+        {can("system.manage_settings") && <Button onClick={() => setOpenK(true)}>Cài đặt file kho</Button>}
+        {can("system.manage_settings") && <Button loading={syncing} onClick={syncPack}>Đồng bộ kho</Button>}
         {can("shipments.upload_doc") && <Button icon={<UploadOutlined />} onClick={() => setOpenD(true)}>Tải chứng từ GA</Button>}
         {can("shipments.create") && <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpenS(true)}>Tạo chuyến</Button>}
       </Space>}
@@ -208,6 +225,14 @@ export default function Shipments() {
             </Upload>
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal title="Cài đặt file kho (bên đóng hàng)" open={openK} onOk={saveKhoCfg} onCancel={() => setOpenK(false)} okText="Lưu">
+        <p style={{ marginTop: 0, color: "#666" }}>
+          Dán link Google Sheet của bên đóng hàng. File phải share quyền xem cho service account.
+          Cột E = mã tracking; ngày đóng lấy theo tên tab ("26.6" = 26/6). Hệ thống quét mỗi 15 phút, mã trùng tracking sẽ chuyển 🟠 "Đóng hàng về".
+        </p>
+        <Input placeholder="https://docs.google.com/spreadsheets/d/..." value={khoUrl} onChange={(e) => setKhoUrl(e.target.value)} />
       </Modal>
     </PageContainer>
   );

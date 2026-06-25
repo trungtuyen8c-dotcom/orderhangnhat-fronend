@@ -39,6 +39,7 @@ export default function Accounting() {
   const [fundBalance, setFundBalance] = useState(0);
   const [fundTxns, setFundTxns] = useState<any[]>([]);
   const [fundModal, setFundModal] = useState<"topup" | "allocate" | "set" | null>(null);
+  const [pendingDeps, setPendingDeps] = useState<any[]>([]);
   const [form] = Form.useForm();
   const [wForm] = Form.useForm();
   const [fForm] = Form.useForm();
@@ -65,10 +66,16 @@ export default function Accounting() {
     }).catch(() => {});
   const loadDebts = () => api.get<CustomerDebt[]>("/accounting/debts").then((r) => setCustDebts(r.data)).catch(() => {});
   const loadFund = () => api.get("/accounting/fund").then((r) => { setFundBalance(r.data.balance); setFundTxns(r.data.txns); }).catch(() => {});
+  const loadPending = () => api.get<any[]>("/accounting/deposits/pending").then((r) => setPendingDeps(r.data)).catch(() => {});
   useEffect(() => {
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
-    loadWallets(); loadDebts(); loadFund();
+    loadWallets(); loadDebts(); loadFund(); loadPending();
   }, []);
+
+  async function confirmDep(id: string) {
+    try { await api.post(`/accounting/customer-deposits/${id}/confirm`); message.success("Đã xác nhận tiền vào"); loadPending(); loadWallets(); loadDebts(); }
+    catch { message.error("Xác nhận thất bại"); }
+  }
 
   async function submitFund() {
     const v = await fForm.validateFields();
@@ -124,6 +131,26 @@ export default function Accounting() {
           <Col xs={12} md={8} key={w.id}><Card><Statistic title={w.name} value={Number(w.balance)} suffix={w.currency === "JPY" ? "¥" : "₫"} /></Card></Col>
         ))}
       </Row>
+
+      {can("accounting.reconcile") && (
+        <Card title={`Cọc chờ xác nhận (${pendingDeps.length})`} style={{ marginBottom: 16 }}
+          extra={<span style={{ color: "#ea7a17" }}>Tối check tiền thực vào tài khoản, bấm ✓ để xác nhận</span>}>
+          <Table rowKey="id" size="small" pagination={{ pageSize: 10 }} dataSource={pendingDeps}
+            locale={{ emptyText: "Không có cọc chờ" }}
+            columns={[
+              { title: "Ngày", dataIndex: "paidAt", render: (v) => dayjs(v).format("DD/MM/YYYY") },
+              { title: "Khách", render: (_, r) => `${r.customerName}${r.customerCode ? ` (${r.customerCode})` : ""}` },
+              { title: "Người CK", dataIndex: "payerName", render: (v) => v ?? "-" },
+              { title: "Số tiền", dataIndex: "amountVnd", align: "right", render: (v) => <b>{vnd(Number(v))}</b> },
+              { title: "Nội dung", dataIndex: "note", render: (v) => v ?? "-" },
+              { title: "", width: 110, render: (_, r) => (
+                <Popconfirm title="Tiền đã thực vào tài khoản?" onConfirm={() => confirmDep(r.id)} okText="Đã vào">
+                  <Button size="small" type="primary" style={{ background: "#16a34a", borderColor: "#16a34a" }}>✓ Xác nhận</Button>
+                </Popconfirm>
+              ) },
+            ]} />
+        </Card>
+      )}
 
       {can("wallets.manage") && (
         <Card title="Quỹ tổng (vốn mua hàng - JPY)" style={{ marginBottom: 16 }}
