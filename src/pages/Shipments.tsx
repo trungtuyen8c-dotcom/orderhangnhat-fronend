@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Upload, Tag, App, Space, Popconfirm, DatePicker, Segmented } from "antd";
+import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Upload, Tag, App, Space, Popconfirm, DatePicker, Segmented, Badge } from "antd";
 import { PlusOutlined, UploadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { UploadFile } from "antd";
@@ -8,8 +8,16 @@ import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
 
 interface S { id: string; code: string; status: string; _count?: { trackings: number; documents: number }; }
-interface Trk { id: string; code: string; review: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; url: string | null; packedAt: string | null; orderId: string | null; order?: { code: string; customer?: { name: string } } | null; }
+interface Trk { id: string; code: string; review: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; url: string | null; packedAt: string | null; vnTrackingCode: string | null; orderId: string | null; order?: { code: string; customer?: { name: string } } | null; }
 interface Order { id: string; code: string; customer?: { name: string }; }
+
+// Trạng thái kiện suy ra từ dữ liệu -> chấm màu
+function trkStatus(t: { vnTrackingCode: string | null; packedAt: string | null; jpWeightKg: string | null }) {
+  if (t.vnTrackingCode) return { key: "vn", color: "#16a34a", label: "Về kho VN" };
+  if (t.packedAt) return { key: "packed", color: "#ea7a17", label: "Đóng hàng về" };
+  if (Number(t.jpWeightKg ?? 0) > 0) return { key: "jp", color: "#2563eb", label: "Kho Nhật" };
+  return { key: "new", color: "#94a3b8", label: "Mới" };
+}
 const DOC_TYPES = ["invoice", "packing", "ingredient", "purchase_invoice", "tax"];
 
 export default function Shipments() {
@@ -22,6 +30,7 @@ export default function Shipments() {
   const [tForm] = Form.useForm();
   const [trkQ, setTrkQ] = useState("");
   const [revF, setRevF] = useState<"todo" | "done" | "all">("todo");
+  const [statusF, setStatusF] = useState<string>("all");
   const [loading, setLoading] = useState(false);
 
   const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
@@ -30,10 +39,11 @@ export default function Shipments() {
     return trks.filter((t) => {
       if (revF === "todo" && t.review) return false;
       if (revF === "done" && !t.review) return false;
+      if (statusF !== "all" && trkStatus(t).key !== statusF) return false;
       if (!nq) return true;
       return norm([t.code, t.order?.code, t.order?.customer?.name].filter(Boolean).join(" ")).includes(nq);
     });
-  }, [trks, trkQ, revF]);
+  }, [trks, trkQ, revF, statusF]);
   const todoCount = useMemo(() => trks.filter((t) => !t.review).length, [trks]);
   const [openS, setOpenS] = useState(false);
   const [openD, setOpenD] = useState(false);
@@ -130,10 +140,13 @@ export default function Shipments() {
             value={trkQ} onChange={(e) => setTrkQ(e.target.value)} />
           <Segmented value={revF} onChange={(v) => setRevF(v as any)}
             options={[{ label: "Chưa đánh giá", value: "todo" }, { label: "Đã đánh giá", value: "done" }, { label: "Tất cả", value: "all" }]} />
+          <Select value={statusF} onChange={setStatusF} style={{ width: 160 }}
+            options={[{ value: "all", label: "Mọi tình trạng" }, { value: "new", label: "🔘 Mới" }, { value: "jp", label: "🔵 Kho Nhật" }, { value: "packed", label: "🟠 Đóng hàng về" }, { value: "vn", label: "🟢 Về kho VN" }]} />
         </Space>
         <Table
           rowKey="id" dataSource={shownTrks} size="small" pagination={{ pageSize: 20, showSizeChanger: true }}
           columns={[
+            { title: "Tình trạng", width: 130, render: (_, t) => { const s = trkStatus(t); return <Badge color={s.color} text={s.label} />; } },
             { title: "Mã tracking", dataIndex: "code", width: 150 },
             { title: "Link", dataIndex: "url", width: 60, render: (v) => (v ? <a href={v} target="_blank" rel="noreferrer">Xem</a> : "-") },
             { title: "Đóng hàng về", dataIndex: "packedAt", width: 110, render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
