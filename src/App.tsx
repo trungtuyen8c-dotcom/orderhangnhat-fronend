@@ -11,6 +11,7 @@ import Shipments from "./pages/Shipments";
 import Accounting from "./pages/Accounting";
 import Warehouse from "./pages/Warehouse";
 import Admin from "./pages/Admin";
+import Backup from "./pages/Backup";
 import PublicLookup from "./pages/PublicLookup";
 
 function page(perm: string, el: React.ReactNode) {
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/accounting" element={page("accounting.reconcile", <Accounting />)} />
           <Route path="/warehouse" element={page("warehouse.weigh_vn", <Warehouse />)} />
           <Route path="/admin" element={page("users.list", <Admin />)} />
+          <Route path="/backup" element={page("system.manage_settings", <Backup />)} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

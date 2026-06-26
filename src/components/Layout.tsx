@@ -4,7 +4,7 @@ import { Layout as AntLayout, Menu, Avatar, Dropdown, Modal, Form, Input, App, B
 import {
   DashboardOutlined, ShoppingCartOutlined, TeamOutlined,
   ContainerOutlined, DollarOutlined, InboxOutlined, SettingOutlined,
-  UserOutlined, LogoutOutlined, KeyOutlined, BellOutlined, DownOutlined, SearchOutlined,
+  UserOutlined, LogoutOutlined, KeyOutlined, BellOutlined, DownOutlined, SearchOutlined, CloudUploadOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../auth";
 import { usePermission } from "../hooks/usePermission";
@@ -29,6 +29,7 @@ const GROUPS: { title?: string; items: NavItem[] }[] = [
   ] },
   { title: "Hệ thống", items: [
     { key: "/admin", icon: <SettingOutlined />, label: "Quản trị", perm: "users.list" },
+    { key: "/backup", icon: <CloudUploadOutlined />, label: "Backup", perm: "system.manage_settings" },
   ] },
 ];
 const ALL = GROUPS.flatMap((g) => g.items);
