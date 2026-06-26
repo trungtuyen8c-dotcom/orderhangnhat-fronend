@@ -69,6 +69,9 @@ export default function Shipments() {
   const [openK, setOpenK] = useState(false);
   const [khoUrl, setKhoUrl] = useState("");
   const [hookUrl, setHookUrl] = useState("");
+  const [openBulk, setOpenBulk] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   const load = () => { setLoading(true); api.get<S[]>("/shipments").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
@@ -97,6 +100,21 @@ export default function Shipments() {
   async function saveCode(id: string, code: string) {
     try { await api.patch(`/trackings/${id}`, { code }); message.success("Đã lưu mã tracking"); loadTrk(); }
     catch { message.error("Lưu mã thất bại"); }
+  }
+  async function bulkAssign() {
+    const items = bulkText.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
+      const [orderCode, ...rest] = l.split(/[\t,;]+|\s{2,}|\s+/);
+      return { orderCode: (orderCode || "").trim(), code: (rest.join("") || "").trim() };
+    }).filter((x) => x.orderCode && x.code);
+    if (!items.length) return message.error("Dán mỗi dòng: mã đơn [tab/khoảng trắng] mã tracking");
+    setBulkBusy(true);
+    try {
+      const r = await api.post<{ updated: number; created: number; notFound: string[] }>("/trackings/bulk", { items });
+      message.success(`Gán ${r.data.updated + r.data.created} mã${r.data.notFound.length ? `, ${r.data.notFound.length} đơn không thấy` : ""}`);
+      if (r.data.notFound.length) message.warning("Không thấy đơn: " + r.data.notFound.join(", "));
+      setOpenBulk(false); setBulkText(""); loadTrk();
+    } catch { message.error("Gán hàng loạt thất bại"); }
+    finally { setBulkBusy(false); }
   }
 
   async function addTracking() {
@@ -170,7 +188,10 @@ export default function Shipments() {
       </Card>
 
       <Card title={`Tracking & Đánh giá hàng (chưa đánh giá: ${todoCount})`} style={{ marginTop: 16 }}
-        extra={can("trackings.create") && <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setOpenT(true)}>Thêm tracking</Button>}>
+        extra={can("trackings.create") && <Space>
+          <Button size="small" onClick={() => setOpenBulk(true)}>Dán nhiều mã</Button>
+          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setOpenT(true)}>Thêm tracking</Button>
+        </Space>}>
         <Space style={{ marginBottom: 12 }} wrap>
           <Input.Search allowClear placeholder="Tìm mã tracking / đơn / khách" style={{ width: 300 }}
             value={trkQ} onChange={(e) => setTrkQ(e.target.value)} />
@@ -249,6 +270,14 @@ export default function Shipments() {
             </Upload>
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal title="Dán nhiều mã tracking" open={openBulk} onOk={bulkAssign} confirmLoading={bulkBusy} onCancel={() => setOpenBulk(false)} okText="Gán" width={560}>
+        <p style={{ marginTop: 0, color: "#666" }}>
+          Mỗi dòng: <b>mã đơn</b> rồi <b>mã tracking</b> (cách nhau bằng Tab/khoảng trắng). Copy 2 cột từ Excel/Sheet dán vào đây.
+        </p>
+        <Input.TextArea rows={10} value={bulkText} onChange={(e) => setBulkText(e.target.value)}
+          placeholder={"JA10017\t368149895794\nJA10018\t507712345678\nJA10019\t490472194343"} style={{ fontFamily: "monospace" }} />
       </Modal>
 
       <Modal title="Cài đặt file kho (bên đóng hàng)" open={openK} onOk={saveKhoCfg} onCancel={() => setOpenK(false)} okText="Lưu" width={680}>
