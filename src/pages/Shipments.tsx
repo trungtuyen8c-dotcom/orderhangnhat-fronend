@@ -72,6 +72,7 @@ export default function Shipments() {
   const [openBulk, setOpenBulk] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [selectedTrk, setSelectedTrk] = useState<string[]>([]);
   const [syncing, setSyncing] = useState(false);
 
   const load = () => { setLoading(true); api.get<S[]>("/shipments").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
@@ -100,6 +101,37 @@ export default function Shipments() {
   async function saveCode(id: string, code: string) {
     try { await api.patch(`/trackings/${id}`, { code }); message.success("Đã lưu mã tracking"); loadTrk(); }
     catch { message.error("Lưu mã thất bại"); }
+  }
+  async function exportInvoice() {
+    if (!selectedTrk.length) return;
+    try {
+      const r = await api.post<{ items: any[]; total: number; consignees: string[]; addresses: string[] }>("/trackings/invoice", { ids: selectedTrk });
+      const d = r.data;
+      const esc = (s: any) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
+      const today = dayjs().format("DD/MM/YYYY");
+      const invNo = "GB-" + dayjs().format("DDMMYY");
+      const rows = d.items.map((it) => `<tr><td>${it.no}</td><td class=l>${esc(it.name)}</td><td>${esc(it.origin)}</td><td class=r>${it.unitPriceJpy.toLocaleString("ja-JP")}</td><td>${esc(it.unit)}</td><td class=r>${it.qty}</td><td class=r>${it.amount.toLocaleString("ja-JP")}</td></tr>`).join("");
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${invNo}</title>
+<style>body{font-family:Arial,sans-serif;font-size:12px;color:#000;padding:24px}h1{text-align:center;letter-spacing:2px}
+.hd{display:flex;justify-content:space-between;margin-bottom:12px}.hd div{line-height:1.5}
+table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #333;padding:4px 6px;text-align:center}
+td.l{text-align:left}td.r,th.r{text-align:right}tfoot td{font-weight:bold}
+.btn{margin:12px 0}@media print{.btn{display:none}}</style></head><body>
+<div class="btn"><button onclick="window.print()">In / Lưu PDF</button></div>
+<h1>INVOICE</h1>
+<div class="hd">
+<div><b>SHIPPER:</b> GLOBAL CO.,LTD<br>ADD: TOKYOTO,TOSHIMAKU,KITAOTSUKA 2-10-1 UNIT 201<br>TEL: 03 68866872</div>
+<div><b>Invoice No:</b> ${invNo}<br><b>DATE:</b> ${today}</div>
+</div>
+<div style="margin-bottom:8px"><b>CONSIGNEE:</b> ${esc(d.consignees.join(", ")) || "-"}<br>${esc(d.addresses.join("; "))}</div>
+<table><thead><tr><th>Item No.</th><th>Item Name</th><th>Country of Origin</th><th class=r>Unit Price(JPY)</th><th>Unit</th><th class=r>Total QTY</th><th class=r>Total Amount(JPY)</th></tr></thead>
+<tbody>${rows}</tbody>
+<tfoot><tr><td colspan="6" class=r>TOTAL</td><td class=r>${d.total.toLocaleString("ja-JP")}</td></tr></tfoot></table>
+</body></html>`;
+      const w = window.open("", "_blank");
+      if (!w) return message.error("Trình duyệt chặn cửa sổ, cho phép popup");
+      w.document.write(html); w.document.close(); w.focus();
+    } catch { message.error("Xuất hóa đơn thất bại"); }
   }
   async function bulkAssign() {
     const items = bulkText.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
@@ -199,10 +231,12 @@ export default function Shipments() {
             options={[{ label: "Chưa đánh giá", value: "todo" }, { label: "Đã đánh giá", value: "done" }, { label: "Tất cả", value: "all" }]} />
           <Select value={statusF} onChange={setStatusF} style={{ width: 160 }}
             options={[{ value: "all", label: "Mọi tình trạng" }, { value: "new", label: "🔘 Mới" }, { value: "jp", label: "🔵 Kho Nhật" }, { value: "packed", label: "🟠 Đóng hàng về" }, { value: "vn", label: "🟢 Về kho VN" }]} />
+          {selectedTrk.length > 0 && <Button type="primary" onClick={exportInvoice}>Xuất hóa đơn ({selectedTrk.length})</Button>}
         </Space>
         <Table
           rowKey="id" dataSource={shownTrks} size="small" pagination={{ pageSize: 20, showSizeChanger: true }}
           scroll={{ x: 1100 }}
+          rowSelection={{ selectedRowKeys: selectedTrk, onChange: (keys) => setSelectedTrk(keys as string[]) }}
           columns={[
             { title: "Khách", dataIndex: ["order", "customer", "name"], width: 100, ellipsis: true, render: (v) => v ?? "-" },
             { title: "Đơn", dataIndex: ["order", "code"], width: 85, render: (v) => v ?? "-" },
