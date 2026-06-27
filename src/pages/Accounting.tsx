@@ -41,6 +41,9 @@ export default function Accounting() {
   const [fundModal, setFundModal] = useState<"topup" | "allocate" | "set" | "cashback" | null>(null);
   const [pendingDeps, setPendingDeps] = useState<any[]>([]);
   const [custSummary, setCustSummary] = useState<any[]>([]);
+  const [report, setReport] = useState<{ month: string; rows: any[]; totals: any } | null>(null);
+  const [reportMonth, setReportMonth] = useState<Dayjs>(dayjs());
+  const [expRep, setExpRep] = useState<{ total: number; compensation: number; other: number; rows: any[] } | null>(null);
   const [form] = Form.useForm();
   const [wForm] = Form.useForm();
   const [fForm] = Form.useForm();
@@ -69,9 +72,11 @@ export default function Accounting() {
   const loadFund = () => api.get("/accounting/fund").then((r) => { setFundBalance(r.data.balance); setFundTxns(r.data.txns); }).catch(() => {});
   const loadPending = () => api.get<any[]>("/accounting/deposits/pending").then((r) => setPendingDeps(r.data)).catch(() => {});
   const loadSummary = () => api.get<any[]>("/accounting/customer-summary").then((r) => setCustSummary(r.data)).catch(() => {});
+  const loadReport = (m: Dayjs) => api.get<{ month: string; rows: any[]; totals: any }>("/accounting/monthly-report", { params: { month: m.format("YYYY-MM") } }).then((r) => setReport(r.data)).catch(() => {});
+  const loadExp = (m: Dayjs) => api.get<{ total: number; compensation: number; other: number; rows: any[] }>("/accounting/expenses/monthly", { params: { month: m.format("YYYY-MM") } }).then((r) => setExpRep(r.data)).catch(() => {});
   useEffect(() => {
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
-    loadWallets(); loadDebts(); loadFund(); loadPending(); loadSummary();
+    loadWallets(); loadDebts(); loadFund(); loadPending(); loadSummary(); loadReport(reportMonth); loadExp(reportMonth);
   }, []);
 
   async function confirmDep(id: string) {
@@ -154,6 +159,53 @@ export default function Accounting() {
             ]} />
         </Card>
       )}
+
+      <Card title="Báo cáo theo tháng (cân + tiền + công nợ)" style={{ marginBottom: 16 }}
+        extra={<DatePicker picker="month" value={reportMonth} format="MM/YYYY" allowClear={false}
+          onChange={(m) => { if (m) { setReportMonth(m); loadReport(m); loadExp(m); } }} />}>
+        <Row gutter={16} className="stat-cards" style={{ marginBottom: 12 }}>
+          <Col xs={12} md={6}><Card size="small"><Statistic title="Tổng cân (kg)" value={report?.totals.canKg ?? 0} precision={2} /></Card></Col>
+          <Col xs={12} md={6}><Card size="small"><Statistic title="Tổng mua" value={report?.totals.mua ?? 0} suffix="₫" /></Card></Col>
+          <Col xs={12} md={6}><Card size="small"><Statistic title="Đã trả trong tháng" value={report?.totals.traTrongThang ?? 0} suffix="₫" valueStyle={{ color: "#16a34a" }} /></Card></Col>
+          <Col xs={12} md={6}><Card size="small"><Statistic title="Tổng công nợ (luỹ kế)" value={report?.totals.congNo ?? 0} suffix="₫" valueStyle={{ color: "#dc2626" }} /></Card></Col>
+        </Row>
+        <Table rowKey="customerId" size="small" pagination={{ pageSize: 15 }} dataSource={report?.rows ?? []}
+          locale={{ emptyText: "Không có dữ liệu trong tháng" }}
+          summary={(data) => {
+            const t = data.reduce((s: any, r: any) => ({ canKg: s.canKg + r.canKg, mua: s.mua + r.mua, tra: s.tra + r.traTrongThang, no: s.no + r.congNo }), { canKg: 0, mua: 0, tra: 0, no: 0 });
+            return (
+              <Table.Summary.Row>
+                <Table.Summary.Cell index={0}><b>Tổng</b></Table.Summary.Cell>
+                <Table.Summary.Cell index={1} align="right"><b>{t.canKg.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}</b></Table.Summary.Cell>
+                <Table.Summary.Cell index={2} align="right"><b>{vnd(t.mua)}</b></Table.Summary.Cell>
+                <Table.Summary.Cell index={3} align="right"><b style={{ color: "#16a34a" }}>{vnd(t.tra)}</b></Table.Summary.Cell>
+                <Table.Summary.Cell index={4} align="right"><b style={{ color: t.no > 0 ? "#dc2626" : "#2563eb" }}>{vnd(t.no)}</b></Table.Summary.Cell>
+              </Table.Summary.Row>
+            );
+          }}
+          columns={[
+            { title: "Khách", dataIndex: "name", render: (v, r: any) => `${v}${r.code ? ` (${r.code})` : ""}` },
+            { title: "Cân (kg)", dataIndex: "canKg", align: "right", render: (v) => (v ? Number(v).toLocaleString("vi-VN", { maximumFractionDigits: 2 }) : "-") },
+            { title: "Mua trong tháng", dataIndex: "mua", align: "right", render: (v) => vnd(v) },
+            { title: "Đã trả trong tháng", dataIndex: "traTrongThang", align: "right", render: (v) => <span style={{ color: "#16a34a" }}>{vnd(v)}</span> },
+            { title: "Công nợ (luỹ kế)", dataIndex: "congNo", align: "right", render: (v) => <b style={{ color: v > 0 ? "#dc2626" : "#2563eb" }}>{v > 0 ? vnd(v) : v < 0 ? `dư ${vnd(-v)}` : "-"}</b> },
+          ]} />
+      </Card>
+
+      <Card title={`Chi phí phát sinh / đền bù khách tháng ${reportMonth.format("MM/YYYY")}`} style={{ marginBottom: 16 }}
+        extra={<span>Tổng: <b style={{ color: "#dc2626" }}>{vnd(expRep?.total ?? 0)}</b> (đền hàng: {vnd(expRep?.compensation ?? 0)})</span>}>
+        <Table rowKey="id" size="small" pagination={{ pageSize: 10 }} dataSource={expRep?.rows ?? []}
+          locale={{ emptyText: "Không có chi phí trong tháng" }}
+          columns={[
+            { title: "Ngày", dataIndex: "incurredAt", render: (v) => dayjs(v).format("DD/MM/YYYY") },
+            { title: "Loại", dataIndex: "kind", render: (v) => (v === "compensation" ? "Đền hàng vỡ/lỗi" : "Khác") },
+            { title: "Đơn", dataIndex: "orderCode", render: (v, r: any) => (v ? `${v}${r.customerName ? ` - ${r.customerName}` : ""}` : "-") },
+            { title: "Số tiền", dataIndex: "amountVnd", align: "right", render: (v, r: any) => (
+              <b style={{ color: "#dc2626" }}>{vnd(v)}{r.currency === "JPY" ? <span style={{ color: "#888", fontSize: 12, fontWeight: 400 }}> ({Number(r.amountOrig).toLocaleString("ja-JP")}¥)</span> : null}</b>
+            ) },
+            { title: "Ghi chú", dataIndex: "note", render: (v) => v ?? "-" },
+          ]} />
+      </Card>
 
       <Card title="Tổng quan công nợ khách (mua / cọc / còn nợ)" style={{ marginBottom: 16 }}>
         <Table rowKey="customerId" size="small" pagination={{ pageSize: 15 }} dataSource={custSummary}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Card, Table, Button, Modal, Form, Input, InputNumber, Select, Space, Tag,
-  Drawer, Descriptions, Divider, Timeline, DatePicker, App,
+  Drawer, Descriptions, Divider, Timeline, DatePicker, App, Checkbox,
 } from "antd";
 import dayjs from "dayjs";
 import { PlusOutlined, MinusCircleOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
@@ -50,8 +50,8 @@ function fmtVal(field: string, val: any) {
 }
 
 export default function Orders() {
-  const { can } = usePermission();
-  const { message } = App.useApp();
+  const { can, hasRole } = usePermission();
+  const { message, modal } = App.useApp();
   const [rows, setRows] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [methods, setMethods] = useState<string[]>([]);
@@ -59,6 +59,9 @@ export default function Orders() {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any | null>(null);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [expForm] = Form.useForm();
+  const [expCur, setExpCur] = useState<"VND" | "JPY">("VND");
   const [form] = Form.useForm();
 
   const [q, setQ] = useState("");
@@ -118,6 +121,7 @@ export default function Orders() {
       serviceFeeAmount: Number(o.serviceFeeAmount), serviceFeeCurrency: o.serviceFeeCurrency,
       jpDomesticShipAmount: Number(o.jpDomesticShipAmount), jpDomesticShipCurrency: o.jpDomesticShipCurrency,
       intlShipAmount: Number(o.intlShipAmount), intlShipCurrency: o.intlShipCurrency,
+      needsCheck: o.needsCheck, checkNote: o.checkNote ?? undefined,
     });
     setOpen(true);
   }
@@ -134,7 +138,20 @@ export default function Orders() {
 
   async function del(id: string) {
     try { await api.delete(`/orders/${id}`); message.success("Đã xóa đơn"); load(); }
-    catch (e: any) { message.error(e?.response?.data?.message ?? "Xóa thất bại"); }
+    catch (e: any) {
+      if (e?.response?.data?.error === "HAS_PAYMENTS" && (hasRole("super_admin") || hasRole("admin"))) {
+        modal.confirm({
+          title: "Đơn đã có giao dịch", okText: "Xóa cả giao dịch", okButtonProps: { danger: true }, cancelText: "Hủy",
+          content: "Đơn này có phiếu thu/chi. Xóa sẽ xóa luôn giao dịch và hoàn lại số dư ví. Không thể hoàn tác.",
+          onOk: async () => {
+            try { await api.delete(`/orders/${id}?force=1`); message.success("Đã xóa đơn + giao dịch"); load(); }
+            catch (e2: any) { message.error(e2?.response?.data?.message ?? "Xóa thất bại"); }
+          },
+        });
+        return;
+      }
+      message.error(e?.response?.data?.message ?? "Xóa thất bại");
+    }
   }
 
   async function changeStatus(id: string, status: string) {
@@ -145,6 +162,19 @@ export default function Orders() {
   async function openDetail(id: string) {
     const r = await api.get(`/orders/${id}`);
     setDetail(r.data);
+    loadExpenses(id);
+  }
+  const loadExpenses = (id: string) => api.get(`/accounting/orders/${id}/expenses`).then((r) => setExpenses(r.data)).catch(() => setExpenses([]));
+  async function addExpense() {
+    const v = await expForm.validateFields();
+    try {
+      await api.post("/accounting/expenses", { orderId: detail.id, kind: v.kind, amount: v.amount, currency: v.currency, exchangeRate: v.exchangeRate, note: v.note, incurredAt: v.incurredAt?.toISOString() });
+      message.success("Đã ghi chi phí"); expForm.resetFields(); setExpCur("VND"); loadExpenses(detail.id);
+    } catch (e: any) { message.error(e?.response?.data?.message ?? "Ghi chi phí thất bại"); }
+  }
+  async function delExpense(id: string) {
+    try { await api.delete(`/accounting/expenses/${id}`); loadExpenses(detail.id); }
+    catch { message.error("Xóa thất bại"); }
   }
 
   async function downloadDoc(id: string, type: string) {
@@ -268,6 +298,15 @@ export default function Orders() {
             </Form.Item>
           </Space>
           <Divider style={{ margin: "8px 0" }} />
+          <Form.Item name="needsCheck" valuePropName="checked" style={{ marginBottom: 4 }}>
+            <Checkbox>Cần gia cố / kiểm tra hàng (kho mở kiểm tra, chụp ảnh) - báo xanh khi về</Checkbox>
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p, c) => p.needsCheck !== c.needsCheck}>
+            {() => form.getFieldValue("needsCheck") && (
+              <Form.Item name="checkNote" label="Ghi chú gia cố/kiểm tra"><Input placeholder="VD: gia cố thùng, kiểm tra nứt vỡ..." /></Form.Item>
+            )}
+          </Form.Item>
+          <Divider style={{ margin: "8px 0" }} />
           <Form.Item noStyle shouldUpdate>
             {() => {
               const p = computeVnd(form.getFieldsValue(true));
@@ -314,6 +353,27 @@ export default function Orders() {
             <Table rowKey="id" size="small" pagination={false} dataSource={detail.payments}
               locale={{ emptyText: "Chưa có" }}
               columns={[{ title: "Loại", dataIndex: "type" }, { title: "Số tiền", dataIndex: "amountVnd", render: (v) => vnd(v) }]} />
+            <Divider>Chi phí phát sinh / đền bù (lỗ của mình, không tính vào nợ khách)</Divider>
+            {can("accounting.record_payment") && (
+              <Form form={expForm} layout="inline" style={{ marginBottom: 8, rowGap: 8, flexWrap: "wrap" }} initialValues={{ kind: "compensation", currency: "VND", incurredAt: dayjs() }}>
+                <Form.Item name="kind"><Select style={{ width: 130 }} options={[{ value: "compensation", label: "Đền hàng vỡ/lỗi" }, { value: "other", label: "Khác" }]} /></Form.Item>
+                <Form.Item name="amount" rules={[{ required: true }]}><InputNumber min={0} placeholder="Số tiền" style={{ width: 110 }} /></Form.Item>
+                <Form.Item name="currency"><Select style={{ width: 76 }} onChange={(v) => setExpCur(v)} options={[{ value: "VND", label: "VND" }, { value: "JPY", label: "JPY" }]} /></Form.Item>
+                {expCur === "JPY" && <Form.Item name="exchangeRate" rules={[{ required: true }]}><InputNumber min={0} placeholder="Tỉ giá" style={{ width: 90 }} /></Form.Item>}
+                <Form.Item name="incurredAt"><DatePicker format="DD/MM/YYYY" /></Form.Item>
+                <Form.Item name="note"><Input placeholder="Lý do (vỡ, móp...)" style={{ width: 150 }} /></Form.Item>
+                <Form.Item><Button type="primary" onClick={addExpense}>Ghi</Button></Form.Item>
+              </Form>
+            )}
+            <Table rowKey="id" size="small" pagination={false} dataSource={expenses}
+              locale={{ emptyText: "Chưa có chi phí" }}
+              columns={[
+                { title: "Ngày", dataIndex: "incurredAt", render: (v) => new Date(v).toLocaleDateString("vi-VN") },
+                { title: "Loại", dataIndex: "kind", render: (v) => (v === "compensation" ? "Đền vỡ/lỗi" : "Khác") },
+                { title: "Số tiền", dataIndex: "amountVnd", align: "right", render: (v, r: any) => <span style={{ color: "#dc2626" }}>{vnd(Number(v))}{r.currency === "JPY" ? ` (${Number(r.amountOrig).toLocaleString("ja-JP")}¥)` : ""}</span> },
+                { title: "Ghi chú", dataIndex: "note", render: (v) => v ?? "-" },
+                ...(can("accounting.record_payment") ? [{ title: "", width: 44, render: (_: any, r: any) => (<Popconfirm title="Xóa?" onConfirm={() => delExpense(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>) }] : []),
+              ]} />
             <Divider>Lịch sử chỉnh sửa</Divider>
             {detail.logs?.length ? (
               <Timeline

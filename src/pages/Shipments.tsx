@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Upload, Tag, App, Space, Popconfirm, DatePicker, Segmented, Badge, Divider } from "antd";
-import { PlusOutlined, UploadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { PlusOutlined, UploadOutlined, EditOutlined, DeleteOutlined, CameraOutlined, CheckCircleFilled } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { UploadFile } from "antd";
 import { api } from "../api";
@@ -8,8 +8,9 @@ import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
 
 interface S { id: string; code: string; status: string; _count?: { trackings: number; documents: number }; }
-interface Trk { id: string; code: string; review: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; url: string | null; packedAt: string | null; vnTrackingCode: string | null; orderId: string | null; order?: { code: string; customer?: { name: string } } | null; }
+interface Trk { id: string; code: string; review: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; shipRateCurrency?: string | null; url: string | null; packedAt: string | null; docCapturedAt: string | null; vnTrackingCode: string | null; orderId: string | null; order?: { code: string; needsCheck?: boolean; checkNote?: string | null; customer?: { name: string } } | null; }
 interface Order { id: string; code: string; customer?: { name: string }; }
+interface Customer { id: string; name: string; }
 
 // Apps Script dán vào file kho: kho gõ mã cột E -> gọi webhook -> quét ngay
 const APPS_SCRIPT = (hookUrl: string) => `function onTrackingEdit(e) {
@@ -40,11 +41,17 @@ export default function Shipments() {
   const [rows, setRows] = useState<S[]>([]);
   const [trks, setTrks] = useState<Trk[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [openT, setOpenT] = useState(false);
+  const [openCons, setOpenCons] = useState(false);
+  const [consCur, setConsCur] = useState<"VND" | "JPY">("VND");
   const [tForm] = Form.useForm();
+  const [cForm] = Form.useForm();
   const [trkQ, setTrkQ] = useState("");
   const [revF, setRevF] = useState<"todo" | "done" | "all">("todo");
   const [statusF, setStatusF] = useState<string>("all");
+  const [packF, setPackF] = useState<dayjs.Dayjs | null>(null);
+  const [docF, setDocF] = useState<"all" | "todo" | "done">("all");
   const [loading, setLoading] = useState(false);
 
   const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
@@ -54,10 +61,13 @@ export default function Shipments() {
       if (revF === "todo" && t.review) return false;
       if (revF === "done" && !t.review) return false;
       if (statusF !== "all" && trkStatus(t).key !== statusF) return false;
+      if (docF === "todo" && t.docCapturedAt) return false;
+      if (docF === "done" && !t.docCapturedAt) return false;
+      if (packF && (!t.packedAt || !dayjs(t.packedAt).isSame(packF, "day"))) return false;
       if (!nq) return true;
       return norm([t.code, t.order?.code, t.order?.customer?.name].filter(Boolean).join(" ")).includes(nq);
     });
-  }, [trks, trkQ, revF, statusF]);
+  }, [trks, trkQ, revF, statusF, docF, packF]);
   const todoCount = useMemo(() => trks.filter((t) => !t.review).length, [trks]);
   const [openS, setOpenS] = useState(false);
   const [openD, setOpenD] = useState(false);
@@ -80,6 +90,7 @@ export default function Shipments() {
   useEffect(() => {
     load(); loadTrk();
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
+    api.get<Customer[]>("/customers").then((r) => setCustomers(r.data)).catch(() => {});
     if (can("system.manage_settings")) api.get<{ sheetUrl: string; hookUrl: string }>("/warehouse/pack-config").then((r) => { setKhoUrl(r.data.sheetUrl ?? ""); setHookUrl(r.data.hookUrl ?? ""); }).catch(() => {});
   }, []);
 
@@ -101,6 +112,10 @@ export default function Shipments() {
   async function saveCode(id: string, code: string) {
     try { await api.patch(`/trackings/${id}`, { code }); message.success("Đã lưu mã tracking"); loadTrk(); }
     catch { message.error("Lưu mã thất bại"); }
+  }
+  async function toggleDoc(t: Trk) {
+    try { await api.patch(`/trackings/${t.id}`, { docCapturedAt: t.docCapturedAt ? null : new Date().toISOString() }); loadTrk(); }
+    catch { message.error("Cập nhật chứng từ thất bại"); }
   }
   async function exportInvoice() {
     if (!selectedTrk.length) return;
@@ -158,6 +173,17 @@ td.l{text-align:left}td.r,th.r{text-align:right}tfoot td{font-weight:bold}
   async function delTracking(id: string) {
     try { await api.delete(`/trackings/${id}`); message.success("Đã xóa"); loadTrk(); }
     catch { message.error("Xóa thất bại"); }
+  }
+  async function addConsignment() {
+    const v = await cForm.validateFields();
+    const body = {
+      customerId: v.customerId, code: v.code,
+      vnWeightKg: v.vnWeightKg, unitPriceVndPerKg: v.unitPriceVndPerKg,
+      shipRateCurrency: v.shipRateCurrency, exchangeRate: v.exchangeRate,
+      review: v.review, packedAt: v.packedAt ? v.packedAt.format("YYYY-MM-DD") : undefined,
+    };
+    try { await api.post("/orders/consignment", body); message.success("Đã thêm hàng ký gửi"); setOpenCons(false); cForm.resetFields(); setConsCur("VND"); loadTrk(); }
+    catch (e: any) { message.error(e?.response?.data?.message ?? "Thêm ký gửi thất bại"); }
   }
 
   async function createShipment() {
@@ -222,6 +248,7 @@ td.l{text-align:left}td.r,th.r{text-align:right}tfoot td{font-weight:bold}
       <Card title={`Tracking & Đánh giá hàng (chưa đánh giá: ${todoCount})`} style={{ marginTop: 16 }}
         extra={can("trackings.create") && <Space>
           <Button size="small" onClick={() => setOpenBulk(true)}>Dán nhiều mã</Button>
+          {can("orders.create") && <Button size="small" onClick={() => setOpenCons(true)}>Thêm hàng ký gửi</Button>}
           <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setOpenT(true)}>Thêm tracking</Button>
         </Space>}>
         <Space style={{ marginBottom: 12 }} wrap>
@@ -231,19 +258,36 @@ td.l{text-align:left}td.r,th.r{text-align:right}tfoot td{font-weight:bold}
             options={[{ label: "Chưa đánh giá", value: "todo" }, { label: "Đã đánh giá", value: "done" }, { label: "Tất cả", value: "all" }]} />
           <Select value={statusF} onChange={setStatusF} style={{ width: 160 }}
             options={[{ value: "all", label: "Mọi tình trạng" }, { value: "new", label: "🔘 Mới" }, { value: "jp", label: "🔵 Kho Nhật" }, { value: "packed", label: "🟠 Đóng hàng về" }, { value: "vn", label: "🟢 Về kho VN" }]} />
+          <DatePicker value={packF} onChange={setPackF} format="DD/MM/YYYY" placeholder="Ngày đóng (chuyến)" allowClear />
+          <Segmented value={docF} onChange={(v) => setDocF(v as any)}
+            options={[{ label: "CT: tất cả", value: "all" }, { label: "Chưa chụp", value: "todo" }, { label: "Đã chụp", value: "done" }]} />
           {selectedTrk.length > 0 && <Button type="primary" onClick={exportInvoice}>Xuất hóa đơn ({selectedTrk.length})</Button>}
         </Space>
         <Table
           rowKey="id" dataSource={shownTrks} size="small" pagination={{ pageSize: 20, showSizeChanger: true }}
-          scroll={{ x: 1100 }}
+          scroll={{ x: 1240 }}
           rowSelection={{ selectedRowKeys: selectedTrk, onChange: (keys) => setSelectedTrk(keys as string[]) }}
           columns={[
             { title: "Khách", dataIndex: ["order", "customer", "name"], width: 100, ellipsis: true, render: (v) => v ?? "-" },
             { title: "Đơn", dataIndex: ["order", "code"], width: 85, render: (v) => v ?? "-" },
             { title: "Đóng về", dataIndex: "packedAt", width: 90, render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
-            { title: "Tình trạng", width: 120, render: (_, t) => { const s = trkStatus(t); return <Badge color={s.color} text={s.label} />; } },
+            { title: "Tình trạng", width: 150, render: (_, t) => { const s = trkStatus(t); return (
+              <Space direction="vertical" size={2}>
+                <Badge color={s.color} text={s.label} />
+                {t.order?.needsCheck && <Tag color="green" title={t.order?.checkNote ?? ""}>Cần gia cố/kiểm tra</Tag>}
+              </Space>
+            ); } },
             { title: "Link", dataIndex: "url", width: 55, align: "center",
               render: (v) => (v ? <a href={v} target="_blank" rel="noreferrer" title={v}>Xem</a> : "-") },
+            { title: "Chứng từ", width: 90, align: "center",
+              render: (_, t) => (
+                <Button size="small" type={t.docCapturedAt ? "text" : "default"}
+                  icon={t.docCapturedAt ? <CheckCircleFilled style={{ color: "#16a34a" }} /> : <CameraOutlined />}
+                  onClick={() => toggleDoc(t)}
+                  title={t.docCapturedAt ? `Đã chụp ${new Date(t.docCapturedAt).toLocaleDateString("vi-VN")} - bấm để bỏ` : "Đánh dấu đã chụp chứng từ"}>
+                  {t.docCapturedAt ? "Đã chụp" : "Chưa"}
+                </Button>
+              ) },
             { title: "Mã tracking", dataIndex: "code", width: 150, render: (v, t) => (
               <Input defaultValue={v ?? ""} placeholder="Điền mã" size="small"
                 onBlur={(e) => { if ((e.target.value || "") !== (v ?? "")) saveCode(t.id, e.target.value.trim()); }} />
@@ -256,7 +300,7 @@ td.l{text-align:left}td.r,th.r{text-align:right}tfoot td{font-weight:bold}
               ),
             },
             { title: "Cân", dataIndex: "jpWeightKg", width: 55, render: (v) => (v ? Number(v) : "-") },
-            { title: "Đ/kg", dataIndex: "unitPriceVndPerKg", width: 75, render: (v) => (v ? Number(v).toLocaleString("vi-VN") : "-") },
+            { title: "Đ/kg", dataIndex: "unitPriceVndPerKg", width: 90, render: (v, t) => (v ? `${Number(v).toLocaleString("vi-VN")} ${t.shipRateCurrency === "JPY" ? "¥" : "đ"}` : "-") },
             ...(can("trackings.delete") ? [{
               title: "", width: 44, fixed: "right" as const, render: (_: any, t: Trk) => (
                 <Popconfirm title="Xóa tracking?" onConfirm={() => delTracking(t.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
@@ -278,6 +322,27 @@ td.l{text-align:left}td.r,th.r{text-align:right}tfoot td{font-weight:bold}
           <Form.Item name="packedAt" label="Ngày đóng hàng về" initialValue={dayjs()}><DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="jpWeightKg" label="Cân (kg)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="unitPriceVndPerKg" label="Đơn giá ship (đ/kg)"><InputNumber min={0} step={1000} style={{ width: "100%" }} /></Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="Thêm hàng ký gửi (chỉ vận chuyển)" open={openCons} onOk={addConsignment} onCancel={() => setOpenCons(false)} okText="Lưu">
+        <p style={{ marginTop: 0, color: "#666" }}>Hàng khách tự đem / không mua qua mình. Chỉ tính tiền ship = cân × đơn giá/kg.</p>
+        <Form form={cForm} layout="vertical" initialValues={{ shipRateCurrency: "VND", packedAt: dayjs() }}>
+          <Form.Item name="customerId" label="Khách" rules={[{ required: true }]}>
+            <Select showSearch optionFilterProp="label" placeholder="Chọn khách"
+              options={customers.map((c) => ({ value: c.id, label: c.name }))} />
+          </Form.Item>
+          <Form.Item name="code" label="Mã tracking" rules={[{ required: true }]}><Input placeholder="Mã vận đơn" /></Form.Item>
+          <Form.Item name="vnWeightKg" label="Cân (kg)" rules={[{ required: true }]}><InputNumber min={0} step={0.1} style={{ width: "100%" }} /></Form.Item>
+          <Space style={{ width: "100%" }} align="start">
+            <Form.Item name="unitPriceVndPerKg" label="Đơn giá ship /kg" rules={[{ required: true }]}><InputNumber min={0} step={1000} style={{ width: 180 }} /></Form.Item>
+            <Form.Item name="shipRateCurrency" label="Đơn vị">
+              <Select style={{ width: 100 }} onChange={(v) => setConsCur(v)} options={[{ value: "VND", label: "VND/kg" }, { value: "JPY", label: "JPY/kg" }]} />
+            </Form.Item>
+          </Space>
+          {consCur === "JPY" && <Form.Item name="exchangeRate" label="Tỉ giá (1¥ = ? đ)" rules={[{ required: true }]}><InputNumber min={0} step={1} style={{ width: "100%" }} /></Form.Item>}
+          <Form.Item name="packedAt" label="Ngày đóng hàng về"><DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="review" label="Ghi chú / đánh giá"><Input placeholder="(tùy chọn)" /></Form.Item>
         </Form>
       </Modal>
 

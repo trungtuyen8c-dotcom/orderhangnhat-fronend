@@ -4,7 +4,7 @@ import { Layout as AntLayout, Menu, Avatar, Dropdown, Modal, Form, Input, App, B
 import {
   DashboardOutlined, ShoppingCartOutlined, TeamOutlined,
   ContainerOutlined, DollarOutlined, InboxOutlined, SettingOutlined,
-  UserOutlined, LogoutOutlined, KeyOutlined, BellOutlined, DownOutlined, SearchOutlined, CloudUploadOutlined,
+  UserOutlined, LogoutOutlined, KeyOutlined, BellOutlined, DownOutlined, SearchOutlined, CloudUploadOutlined, SafetyOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../auth";
 import { usePermission } from "../hooks/usePermission";
@@ -12,7 +12,7 @@ import { api } from "../api";
 
 const { Header, Sider, Content } = AntLayout;
 
-interface NavItem { key: string; icon: ReactNode; label: string; perm?: string }
+interface NavItem { key: string; icon: ReactNode; label: string; perm?: string; superOnly?: boolean }
 const GROUPS: { title?: string; items: NavItem[] }[] = [
   { items: [{ key: "/", icon: <DashboardOutlined />, label: "Dashboard" }] },
   { title: "Vận hành", items: [
@@ -23,12 +23,15 @@ const GROUPS: { title?: string; items: NavItem[] }[] = [
     { key: "/warehouse-jp", icon: <InboxOutlined />, label: "Kho Nhật", perm: "warehouse.weigh_jp" },
     { key: "/shipments", icon: <ContainerOutlined />, label: "Chuyến & Chứng từ & Đánh giá", perm: "shipments.list" },
     { key: "/warehouse", icon: <InboxOutlined />, label: "Kho VN", perm: "warehouse.weigh_vn" },
+    { key: "/control", icon: <SafetyOutlined />, label: "Trung tâm kiểm soát", perm: "trackings.list" },
   ] },
   { title: "Tài chính", items: [
     { key: "/accounting", icon: <DollarOutlined />, label: "Kế toán", perm: "accounting.reconcile" },
+    { key: "/company-cost", icon: <DollarOutlined />, label: "Phải trả kho/cty", perm: "accounting.reconcile" },
   ] },
   { title: "Hệ thống", items: [
     { key: "/admin", icon: <SettingOutlined />, label: "Quản trị", perm: "users.list" },
+    { key: "/payroll", icon: <DollarOutlined />, label: "Lương", superOnly: true },
     { key: "/backup", icon: <CloudUploadOutlined />, label: "Backup", perm: "system.manage_settings" },
   ] },
 ];
@@ -37,7 +40,8 @@ const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,
 
 export function Layout({ children }: { children: ReactNode }) {
   const { me, logout } = useAuth();
-  const { can } = usePermission();
+  const { can, hasRole } = usePermission();
+  const visible = (m: NavItem) => (!m.perm || can(m.perm)) && (!m.superOnly || hasRole("super_admin"));
   const nav = useNavigate();
   const loc = useLocation();
   const { message } = App.useApp();
@@ -47,19 +51,27 @@ export function Layout({ children }: { children: ReactNode }) {
   const [q, setQ] = useState("");
   const [form] = Form.useForm();
 
+  const [ctrl, setCtrl] = useState<Record<string, number> | null>(null);
   useEffect(() => {
     api.get<{ orders: { code: string }[] }>("/stats/alerts").then((r) => setAlerts(r.data.orders ?? [])).catch(() => {});
+    if (can("trackings.list")) api.get<Record<string, number>>("/control/overview").then((r) => setCtrl(r.data)).catch(() => {});
   }, []);
+  const CTRL_LABELS: Record<string, string> = {
+    notReviewed: "Chưa đánh giá", pendingDeposits: "Cọc chờ xác nhận", docNotCaptured: "Chưa chụp chứng từ",
+    unmatched: "Tracking chưa khớp đơn", missingPrice: "Đơn thiếu giá", cartonMismatch: "Kiện lệch cân", overdueDebts: "Công nợ quá hạn",
+  };
+  const ctrlIssues = ctrl ? Object.entries(CTRL_LABELS).map(([k, label]) => ({ label, count: ctrl[k] ?? 0 })).filter((x) => x.count > 0) : [];
+  const totalIssues = alerts.length + ctrlIssues.reduce((s, x) => s + x.count, 0);
 
   const menuItems = useMemo(() => {
     const toItem = (m: NavItem) => ({ key: m.key, icon: m.icon, label: m.label });
     if (q.trim()) {
       const nq = norm(q);
-      return ALL.filter((m) => (!m.perm || can(m.perm)) && norm(m.label).includes(nq)).map(toItem);
+      return ALL.filter((m) => visible(m) && norm(m.label).includes(nq)).map(toItem);
     }
     const out: any[] = [];
     for (const g of GROUPS) {
-      const vis = g.items.filter((m) => !m.perm || can(m.perm));
+      const vis = g.items.filter(visible);
       if (!vis.length) continue;
       if (g.title && !collapsed) out.push({ type: "group", label: g.title, children: vis.map(toItem) });
       else out.push(...vis.map(toItem));
@@ -81,13 +93,22 @@ export function Layout({ children }: { children: ReactNode }) {
   const bell = (
     <Popover
       trigger="click" placement="bottomRight"
-      title="Cảnh báo đơn quá 7 ngày chưa tracking"
+      title="Cảnh báo cần xử lý"
       content={
-        <List size="small" style={{ width: 260 }} locale={{ emptyText: "Không có cảnh báo" }}
-          dataSource={alerts} renderItem={(o) => <List.Item>{o.code}</List.Item>} />
+        <div style={{ width: 280 }}>
+          {ctrlIssues.length > 0 && (
+            <List size="small" dataSource={ctrlIssues}
+              renderItem={(x) => (
+                <List.Item style={{ cursor: "pointer" }} onClick={() => nav("/control")}
+                  actions={[<Badge key="c" count={x.count} size="small" style={{ background: "#dc2626" }} />]}>{x.label}</List.Item>
+              )} />
+          )}
+          <List size="small" header={<b>Đơn quá 7 ngày chưa tracking</b>} locale={{ emptyText: "Không có" }}
+            dataSource={alerts} renderItem={(o) => <List.Item>{o.code}</List.Item>} />
+        </div>
       }
     >
-      <Badge count={alerts.length} size="small">
+      <Badge count={totalIssues} size="small">
         <Button type="text" shape="circle" icon={<BellOutlined style={{ fontSize: 18 }} />} />
       </Badge>
     </Popover>

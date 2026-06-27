@@ -9,7 +9,7 @@ import { vnd } from "../lib/status";
 
 interface Customer { id: string; code?: string | null; name: string; fbZalo?: string | null; phone?: string | null; address?: string | null; note?: string | null; sheetId?: string | null; revenue?: number; debt?: number; }
 interface Wallet { id: string; name: string; currency: string; }
-interface Deposit { id: string; amountVnd: string; payerName?: string | null; method?: string | null; note?: string | null; paidAt: string; confirmed: boolean; }
+interface Deposit { id: string; amountVnd: string; currency?: string; amountOrig?: string; payerName?: string | null; method?: string | null; note?: string | null; paidAt: string; confirmed: boolean; }
 interface MonthRow { month: string; order: number; paid: number; balance: number; }
 interface Ledger { orderTotal: number; depositTotal: number; pendingTotal: number; paymentTotal: number; paidTotal: number; debt: number; deposits: Deposit[]; byMonth: MonthRow[]; }
 
@@ -25,6 +25,7 @@ export default function Customers() {
   const [ledger, setLedger] = useState<Ledger | null>(null);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [depForm] = Form.useForm();
+  const [depCur, setDepCur] = useState<"VND" | "JPY">("VND");
 
   const load = () => { setLoading(true); api.get<Customer[]>("/customers").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
   useEffect(() => {
@@ -40,8 +41,8 @@ export default function Customers() {
   async function addDeposit() {
     const v = await depForm.validateFields();
     try {
-      await api.post(`/accounting/customers/${ledgerCus!.id}/deposits`, { amountVnd: v.amountVnd, payerName: v.payerName, method: v.method, walletId: v.walletId, note: v.note, paidAt: v.paidAt?.toISOString() });
-      message.success("Đã ghi cọc (chờ kế toán xác nhận)"); depForm.resetFields(); reloadLedger(); load();
+      await api.post(`/accounting/customers/${ledgerCus!.id}/deposits`, { amount: v.amount, currency: v.currency, exchangeRate: v.exchangeRate, payerName: v.payerName, method: v.method, walletId: v.walletId, note: v.note, paidAt: v.paidAt?.toISOString() });
+      message.success("Đã ghi cọc, đã đẩy lên sheet khách"); depForm.resetFields(); setDepCur("VND"); reloadLedger(); load();
     } catch (e: any) { message.error(e?.response?.data?.message ?? "Ghi cọc thất bại"); }
   }
   async function delDeposit(id: string) {
@@ -133,13 +134,15 @@ export default function Customers() {
                 valueStyle={{ color: ledger.debt > 0 ? "#dc2626" : "#2563eb" }} />
             </Space>
 
-            <Divider titlePlacement="start" style={{ marginTop: 20 }}>Ghi cọc (NV nhập, kế toán xác nhận sau)</Divider>
+            <Divider titlePlacement="start" style={{ marginTop: 20 }}>Ghi cọc (lên sheet ngay, kế toán xác nhận nội bộ sau)</Divider>
             {can("accounting.record_payment") && (
-              <Form form={depForm} layout="inline" style={{ rowGap: 8, flexWrap: "wrap" }} initialValues={{ paidAt: dayjs() }}>
-                <Form.Item name="amountVnd" rules={[{ required: true, message: "Nhập số tiền" }]}>
-                  <InputNumber placeholder="Số tiền VND" min={0} step={1000000} style={{ width: 140 }}
+              <Form form={depForm} layout="inline" style={{ rowGap: 8, flexWrap: "wrap" }} initialValues={{ paidAt: dayjs(), currency: "VND" }}>
+                <Form.Item name="amount" rules={[{ required: true, message: "Nhập số tiền" }]}>
+                  <InputNumber placeholder={depCur === "JPY" ? "Số tiền ¥" : "Số tiền VND"} min={0} step={depCur === "JPY" ? 1000 : 1000000} style={{ width: 140 }}
                     formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} parser={(v) => Number((v ?? "").replace(/,/g, "")) as any} />
                 </Form.Item>
+                <Form.Item name="currency"><Select style={{ width: 90 }} onChange={(v) => setDepCur(v)} options={[{ value: "VND", label: "VND" }, { value: "JPY", label: "JPY" }]} /></Form.Item>
+                {depCur === "JPY" && <Form.Item name="exchangeRate" rules={[{ required: true, message: "Tỉ giá" }]}><InputNumber placeholder="Tỉ giá 1¥=?đ" min={0} style={{ width: 120 }} /></Form.Item>}
                 <Form.Item name="payerName"><Input placeholder="Tên người CK" style={{ width: 130 }} /></Form.Item>
                 <Form.Item name="paidAt"><DatePicker format="DD/MM/YYYY" /></Form.Item>
                 <Form.Item name="walletId"><Select placeholder="Ví nhận" allowClear style={{ width: 120 }}
@@ -163,7 +166,9 @@ export default function Customers() {
             <Table rowKey="id" size="small" pagination={false} dataSource={ledger.deposits}
               columns={[
                 { title: "Ngày", dataIndex: "paidAt", render: (v) => dayjs(v).format("DD/MM/YYYY") },
-                { title: "Số tiền", dataIndex: "amountVnd", align: "right", render: (v) => vnd(Number(v)) },
+                { title: "Số tiền", dataIndex: "amountVnd", align: "right", render: (v, d) => (
+                  <span>{vnd(Number(v))}{d.currency === "JPY" ? <span style={{ color: "#888", fontSize: 12 }}> ({Number(d.amountOrig).toLocaleString("ja-JP")}¥)</span> : null}</span>
+                ) },
                 { title: "Người CK", dataIndex: "payerName", render: (v) => v ?? "-" },
                 { title: "Nội dung", dataIndex: "note", render: (v) => v ?? "-" },
                 { title: "Tình trạng", width: 130, render: (_, d) => (
