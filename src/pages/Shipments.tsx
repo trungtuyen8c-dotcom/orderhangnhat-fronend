@@ -263,46 +263,46 @@ td.l{text-align:left}td.r,th.r{text-align:right}tfoot td{font-weight:bold}
             options={[{ label: "CT: tất cả", value: "all" }, { label: "Chưa chụp", value: "todo" }, { label: "Đã chụp", value: "done" }]} />
           {selectedTrk.length > 0 && <Button type="primary" onClick={exportInvoice}>Xuất hóa đơn ({selectedTrk.length})</Button>}
         </Space>
+        <style>{`.trk-compact .ant-table-thead>tr>th,.trk-compact .ant-table-tbody>tr>td{padding:3px 6px!important;font-size:12px}.trk-compact .ant-input-sm{font-size:12px;padding:1px 6px}`}</style>
         <Table
-          rowKey="id" dataSource={shownTrks} size="small" pagination={{ pageSize: 20, showSizeChanger: true }}
-          scroll={{ x: 1240 }}
+          className="trk-compact"
+          rowKey="id" dataSource={shownTrks} size="small" pagination={{ pageSize: 30, showSizeChanger: true }}
+          scroll={{ x: 940 }}
           rowSelection={{ selectedRowKeys: selectedTrk, onChange: (keys) => setSelectedTrk(keys as string[]) }}
           columns={[
-            { title: "Khách", dataIndex: ["order", "customer", "name"], width: 100, ellipsis: true, render: (v) => v ?? "-" },
-            { title: "Đơn", dataIndex: ["order", "code"], width: 85, render: (v) => v ?? "-" },
-            { title: "Đóng về", dataIndex: "packedAt", width: 90, render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
-            { title: "Tình trạng", width: 150, render: (_, t) => { const s = trkStatus(t); return (
-              <Space direction="vertical" size={2}>
-                <Badge color={s.color} text={s.label} />
-                {t.order?.needsCheck && <Tag color="green" title={t.order?.checkNote ?? ""}>Cần gia cố/kiểm tra</Tag>}
+            { title: "Khách", dataIndex: ["order", "customer", "name"], width: 84, ellipsis: true, render: (v) => v ?? "-" },
+            { title: "Đơn", dataIndex: ["order", "code"], width: 64, render: (v) => v ?? "-" },
+            { title: "Đóng về", dataIndex: "packedAt", width: 74, render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
+            { title: "Tình trạng", width: 116, render: (_, t) => { const s = trkStatus(t); return (
+              <Space direction="vertical" size={0}>
+                <Badge color={s.color} text={<span style={{ fontSize: 12 }}>{s.label}</span>} />
+                {t.order?.needsCheck && <Tag color="green" style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "16px", padding: "0 4px" }} title={t.order?.checkNote ?? ""}>Gia cố/kiểm tra</Tag>}
               </Space>
             ); } },
-            { title: "Link", dataIndex: "url", width: 55, align: "center",
+            { title: "Link", dataIndex: "url", width: 38, align: "center",
               render: (v) => (v ? <a href={v} target="_blank" rel="noreferrer" title={v}>Xem</a> : "-") },
-            { title: "Chứng từ", width: 90, align: "center",
+            { title: "CT", width: 40, align: "center",
               render: (_, t) => (
-                <Button size="small" type={t.docCapturedAt ? "text" : "default"}
-                  icon={t.docCapturedAt ? <CheckCircleFilled style={{ color: "#16a34a" }} /> : <CameraOutlined />}
+                <Button size="small" type="text" style={{ padding: 2 }}
+                  icon={t.docCapturedAt ? <CheckCircleFilled style={{ color: "#16a34a" }} /> : <CameraOutlined style={{ color: "#94a3b8" }} />}
                   onClick={() => toggleDoc(t)}
-                  title={t.docCapturedAt ? `Đã chụp ${new Date(t.docCapturedAt).toLocaleDateString("vi-VN")} - bấm để bỏ` : "Đánh dấu đã chụp chứng từ"}>
-                  {t.docCapturedAt ? "Đã chụp" : "Chưa"}
-                </Button>
+                  title={t.docCapturedAt ? `Đã chụp ${new Date(t.docCapturedAt).toLocaleDateString("vi-VN")} - bấm để bỏ` : "Đánh dấu đã chụp chứng từ"} />
               ) },
-            { title: "Mã tracking", dataIndex: "code", width: 150, render: (v, t) => (
+            { title: "Mã tracking", dataIndex: "code", width: 124, render: (v, t) => (
               <Input defaultValue={v ?? ""} placeholder="Điền mã" size="small"
                 onBlur={(e) => { if ((e.target.value || "") !== (v ?? "")) saveCode(t.id, e.target.value.trim()); }} />
             ) },
             {
-              title: "Đánh giá", dataIndex: "review", width: 180,
+              title: "Đánh giá", dataIndex: "review", width: 140,
               render: (v, t) => (
                 <Input size="small" defaultValue={v ?? ""} placeholder="Đánh giá hàng"
                   onBlur={(e) => { if ((e.target.value || "") !== (v ?? "")) saveReview(t.id, e.target.value); }} />
               ),
             },
-            { title: "Cân", dataIndex: "jpWeightKg", width: 55, render: (v) => (v ? Number(v) : "-") },
-            { title: "Đ/kg", dataIndex: "unitPriceVndPerKg", width: 90, render: (v, t) => (v ? `${Number(v).toLocaleString("vi-VN")} ${t.shipRateCurrency === "JPY" ? "¥" : "đ"}` : "-") },
+            { title: "Cân", dataIndex: "jpWeightKg", width: 44, render: (v) => (v ? Number(v) : "-") },
+            { title: "Đ/kg", dataIndex: "unitPriceVndPerKg", width: 74, render: (v, t) => (v ? `${Number(v).toLocaleString("vi-VN")}${t.shipRateCurrency === "JPY" ? "¥" : "đ"}` : "-") },
             ...(can("trackings.delete") ? [{
-              title: "", width: 44, fixed: "right" as const, render: (_: any, t: Trk) => (
+              title: "", width: 36, fixed: "right" as const, render: (_: any, t: Trk) => (
                 <Popconfirm title="Xóa tracking?" onConfirm={() => delTracking(t.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
               ),
             }] : []),
