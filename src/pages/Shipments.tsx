@@ -88,6 +88,9 @@ export default function Shipments() {
   const load = () => { setLoading(true); api.get<S[]>("/shipments").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
   const loadTrk = () => api.get<Trk[]>("/trackings").then((r) => setTrks(r.data)).catch(() => {});
   useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("rev") === "todo") setRevF("todo");
+    if (q.get("doc") === "todo") { setDocF("todo"); setRevF("all"); }
     load(); loadTrk();
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
     api.get<Customer[]>("/customers").then((r) => setCustomers(r.data)).catch(() => {});

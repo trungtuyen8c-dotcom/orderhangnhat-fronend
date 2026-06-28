@@ -29,7 +29,11 @@ export default function Control() {
   const loadCartons = () => api.get<Carton[]>("/control/cartons").then((r) => setCartons(r.data)).catch(() => {});
   const loadUnmatched = () => api.get<Unmatched[]>("/control/unmatched").then((r) => setUnmatched(r.data)).catch(() => {});
   const loadOverdue = () => api.get<{ cfg: any; list: Overdue[] }>("/control/overdue-debts").then((r) => { setOverdue(r.data.list); setCfg(r.data.cfg); cfgForm.setFieldsValue(r.data.cfg); }).catch(() => {});
-  useEffect(() => { loadOv(); loadCartons(); loadUnmatched(); loadOverdue(); }, []);
+  useEffect(() => {
+    loadOv(); loadCartons(); loadUnmatched(); loadOverdue();
+    const h = window.location.hash.slice(1);
+    if (h) setTimeout(() => document.getElementById(h)?.scrollIntoView({ behavior: "smooth", block: "start" }), 600);
+  }, []);
 
   async function createCarton() {
     const v = await cForm.validateFields();
@@ -77,7 +81,7 @@ export default function Control() {
         ))}
       </Row>
 
-      <Card title="Kiện & đối soát cân (kho Nhật báo cân tổng)" style={{ marginBottom: 16 }}>
+      <Card id="carton" title="Kiện & đối soát cân (kho Nhật báo cân tổng)" style={{ marginBottom: 16 }}>
         {can("trackings.update") && (
           <Form form={cForm} layout="inline" style={{ marginBottom: 12 }} onFinish={createCarton}>
             <Form.Item name="code" rules={[{ required: true }]}><Input placeholder="Mã kiện (vd A1)" /></Form.Item>
@@ -118,7 +122,7 @@ export default function Control() {
           ]} />
       </Card>
 
-      <Card title={`Tracking về VN chưa khớp đơn (${unmatched.length})`} style={{ marginBottom: 16 }}
+      <Card id="unmatched" title={`Tracking về VN chưa khớp đơn (${unmatched.length})`} style={{ marginBottom: 16 }}
         extra={<span style={{ color: "#666" }}>Hàng đã về nhưng mã tracking chưa gắn đơn nào - cần xử lý ở trang Vận chuyển</span>}>
         <Table rowKey="id" size="small" dataSource={unmatched} pagination={{ pageSize: 10 }}
           locale={{ emptyText: "Không có tracking lạc" }}
@@ -131,7 +135,7 @@ export default function Control() {
           ]} />
       </Card>
 
-      <Card title={`Công nợ quá hạn / vượt ngưỡng (${overdue.length})`}
+      <Card id="overdue" title={`Công nợ quá hạn / vượt ngưỡng (${overdue.length})`}
         extra={can("system.manage_settings") && (
           <Form form={cfgForm} layout="inline" initialValues={cfg} onFinish={saveCfg}>
             <Form.Item name="thresholdVnd" label="Ngưỡng nợ (₫)"><InputNumber min={0} step={1000000} style={{ width: 160 }} /></Form.Item>

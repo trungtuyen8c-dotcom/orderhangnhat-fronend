@@ -20,7 +20,6 @@ const GROUPS: { title?: string; items: NavItem[] }[] = [
     { key: "/customers", icon: <TeamOutlined />, label: "Khách hàng", perm: "customers.list" },
   ] },
   { title: "Kho & Vận chuyển", items: [
-    { key: "/warehouse-jp", icon: <InboxOutlined />, label: "Kho Nhật", perm: "warehouse.weigh_jp" },
     { key: "/shipments", icon: <ContainerOutlined />, label: "Chuyến & Chứng từ & Đánh giá", perm: "shipments.list" },
     { key: "/warehouse", icon: <InboxOutlined />, label: "Kho VN", perm: "warehouse.weigh_vn" },
     { key: "/control", icon: <SafetyOutlined />, label: "Trung tâm kiểm soát", perm: "trackings.list" },
@@ -60,7 +59,12 @@ export function Layout({ children }: { children: ReactNode }) {
     notReviewed: "Chưa đánh giá", pendingDeposits: "Cọc chờ xác nhận", docNotCaptured: "Chưa chụp chứng từ",
     unmatched: "Tracking chưa khớp đơn", missingPrice: "Đơn thiếu giá", cartonMismatch: "Kiện lệch cân", overdueDebts: "Công nợ quá hạn",
   };
-  const ctrlIssues = ctrl ? Object.entries(CTRL_LABELS).map(([k, label]) => ({ label, count: ctrl[k] ?? 0 })).filter((x) => x.count > 0) : [];
+  // Mỗi cảnh báo bấm vào nhảy đúng chỗ xử lí
+  const CTRL_TARGET: Record<string, string> = {
+    notReviewed: "/shipments?rev=todo", pendingDeposits: "/accounting#pending", docNotCaptured: "/shipments?doc=todo",
+    unmatched: "/control#unmatched", missingPrice: "/orders", cartonMismatch: "/control#carton", overdueDebts: "/control#overdue",
+  };
+  const ctrlIssues = ctrl ? Object.entries(CTRL_LABELS).map(([k, label]) => ({ key: k, label, count: ctrl[k] ?? 0 })).filter((x) => x.count > 0) : [];
   const totalIssues = alerts.length + ctrlIssues.reduce((s, x) => s + x.count, 0);
 
   const menuItems = useMemo(() => {
@@ -99,12 +103,12 @@ export function Layout({ children }: { children: ReactNode }) {
           {ctrlIssues.length > 0 && (
             <List size="small" dataSource={ctrlIssues}
               renderItem={(x) => (
-                <List.Item style={{ cursor: "pointer" }} onClick={() => nav("/control")}
+                <List.Item style={{ cursor: "pointer" }} onClick={() => nav(CTRL_TARGET[x.key] ?? "/control")}
                   actions={[<Badge key="c" count={x.count} size="small" style={{ background: "#dc2626" }} />]}>{x.label}</List.Item>
               )} />
           )}
           <List size="small" header={<b>Đơn quá 7 ngày chưa tracking</b>} locale={{ emptyText: "Không có" }}
-            dataSource={alerts} renderItem={(o) => <List.Item>{o.code}</List.Item>} />
+            dataSource={alerts} renderItem={(o) => <List.Item style={{ cursor: "pointer" }} onClick={() => nav("/orders")}>{o.code}</List.Item>} />
         </div>
       }
     >

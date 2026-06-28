@@ -77,6 +77,8 @@ export default function Accounting() {
   useEffect(() => {
     api.get<Order[]>("/orders").then((r) => setOrders(r.data)).catch(() => {});
     loadWallets(); loadDebts(); loadFund(); loadPending(); loadSummary(); loadReport(reportMonth); loadExp(reportMonth);
+    const h = window.location.hash.slice(1);
+    if (h) setTimeout(() => document.getElementById(h)?.scrollIntoView({ behavior: "smooth", block: "start" }), 600);
   }, []);
 
   async function confirmDep(id: string) {
@@ -141,7 +143,7 @@ export default function Accounting() {
       </Row>
 
       {can("accounting.reconcile") && (
-        <Card title={`Cọc chờ xác nhận (${pendingDeps.length})`} style={{ marginBottom: 16 }}
+        <Card id="pending" title={`Cọc chờ xác nhận (${pendingDeps.length})`} style={{ marginBottom: 16 }}
           extra={<span style={{ color: "#ea7a17" }}>Tối check tiền thực vào tài khoản, bấm ✓ để xác nhận</span>}>
           <Table rowKey="id" size="small" pagination={{ pageSize: 10 }} dataSource={pendingDeps}
             locale={{ emptyText: "Không có cọc chờ" }}
