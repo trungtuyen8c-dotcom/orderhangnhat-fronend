@@ -8,7 +8,7 @@ import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
 
 interface S { id: string; code: string; status: string; _count?: { trackings: number; documents: number }; }
-interface Trk { id: string; code: string; review: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; shipRateCurrency?: string | null; url: string | null; packedAt: string | null; docCapturedAt: string | null; vnTrackingCode: string | null; orderId: string | null; order?: { code: string; needsCheck?: boolean; checkNote?: string | null; customer?: { name: string } } | null; }
+interface Trk { id: string; code: string; review: string | null; jpWeightKg: string | null; unitPriceVndPerKg: string | null; shipRateCurrency?: string | null; url: string | null; packedAt: string | null; docCapturedAt: string | null; vnTrackingCode: string | null; orderId: string | null; order?: { code: string; needsCheck?: boolean; checkNote?: string | null; customer?: { name: string }; items?: { url: string | null }[] } | null; }
 interface Order { id: string; code: string; customer?: { name: string }; }
 interface Customer { id: string; name: string; }
 
@@ -282,8 +282,8 @@ td.l{text-align:left}td.r,th.r{text-align:right}tfoot td{font-weight:bold}
                 {t.order?.needsCheck && <Tag color="green" style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "16px", padding: "0 4px" }} title={t.order?.checkNote ?? ""}>Gia cố/kiểm tra</Tag>}
               </Space>
             ); } },
-            { title: "Link", dataIndex: "url", width: 38, align: "center",
-              render: (v) => (v ? <a href={v} target="_blank" rel="noreferrer" title={v}>Xem</a> : "-") },
+            { title: "Link", width: 42, align: "center",
+              render: (_, t) => { const lk = t.url || t.order?.items?.find((i) => i.url)?.url; return lk ? <a href={lk} target="_blank" rel="noreferrer" title={lk}>Xem</a> : "-"; } },
             { title: "CT", width: 40, align: "center",
               render: (_, t) => (
                 <Button size="small" type="text" style={{ padding: 2 }}
