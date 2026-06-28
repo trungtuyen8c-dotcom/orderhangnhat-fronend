@@ -7,7 +7,7 @@ import { usePermission } from "../hooks/usePermission";
 import { PageContainer } from "../components/PageContainer";
 import { vnd } from "../lib/status";
 
-interface Customer { id: string; code?: string | null; name: string; fbZalo?: string | null; phone?: string | null; address?: string | null; note?: string | null; sheetId?: string | null; revenue?: number; debt?: number; }
+interface Customer { id: string; code?: string | null; name: string; fbZalo?: string | null; phone?: string | null; address?: string | null; note?: string | null; sheetId?: string | null; shipRatePerKg?: number | string | null; revenue?: number; debt?: number; }
 interface Wallet { id: string; name: string; currency: string; }
 interface Deposit { id: string; amountVnd: string; currency?: string; amountOrig?: string; payerName?: string | null; method?: string | null; note?: string | null; paidAt: string; confirmed: boolean; }
 interface MonthRow { month: string; order: number; paid: number; balance: number; }
@@ -62,7 +62,7 @@ export default function Customers() {
 
   function open(mode: "create" | "edit", row?: Customer) {
     setEdit({ mode, row });
-    if (mode === "edit" && row) form.setFieldsValue({ ...row, sheetUrl: row.sheetId ?? undefined }); else form.resetFields();
+    if (mode === "edit" && row) form.setFieldsValue({ ...row, sheetUrl: row.sheetId ?? undefined, shipRatePerKg: row.shipRatePerKg != null ? Number(row.shipRatePerKg) : undefined }); else form.resetFields();
   }
   async function submit() {
     const v = await form.validateFields();
@@ -117,6 +117,7 @@ export default function Customers() {
               extra="Dán link file Sheet của khách (1 khách 1 file). Đơn tự điền vào tab tháng (số '7','8'...) - giữ nguyên template/màu/công thức của bạn.">
               <Input placeholder="https://docs.google.com/spreadsheets/d/..." />
             </Form.Item>
+            <Form.Item name="shipRatePerKg" label="Đơn giá ship (đ/kg) - kho cân xong tự tính, kho không thấy"><InputNumber min={0} step={1000} style={{ width: "100%" }} formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} parser={(v) => Number((v ?? "").replace(/,/g, "")) as any} /></Form.Item>
             <Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item>
           </Form>
         </Modal>
