@@ -15,7 +15,13 @@ interface Customer { id: string; name: string; }
 // Apps Script dán vào file kho: kho gõ mã cột E -> gọi webhook -> quét ngay
 const APPS_SCRIPT = (hookUrl: string) => `function onTrackingEdit(e) {
   if (!e || !e.range || e.range.getColumn() !== 5) return; // chỉ cột E (Mã TRACKING)
-  UrlFetchApp.fetch("${hookUrl}", { method: "post", muteHttpExceptions: true });
+  var code = (e.range.getValue() || "").toString().trim();
+  if (!code) return;
+  UrlFetchApp.fetch("${hookUrl}", {
+    method: "post", contentType: "application/json",
+    payload: JSON.stringify({ code: code, tab: e.range.getSheet().getName(), row: e.range.getRow() }),
+    muteHttpExceptions: true
+  });
 }
 
 // Chạy hàm này 1 lần để cài trigger (cấp quyền khi được hỏi)
