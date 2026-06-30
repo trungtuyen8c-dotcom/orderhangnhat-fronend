@@ -22,11 +22,12 @@ const GROUPS: { title?: string; items: NavItem[] }[] = [
   { title: "Kho & Vận chuyển", items: [
     { key: "/shipments", icon: <ContainerOutlined />, label: "Chuyến & Chứng từ & Đánh giá", perm: "shipments.list" },
     { key: "/warehouse", icon: <InboxOutlined />, label: "Kho VN", perm: "warehouse.weigh_vn" },
-    { key: "/control", icon: <SafetyOutlined />, label: "Trung tâm kiểm soát", perm: "trackings.list" },
+    { key: "/control", icon: <SafetyOutlined />, label: "Trung tâm kiểm soát", perm: "control.view" },
   ] },
   { title: "Tài chính", items: [
     { key: "/accounting", icon: <DollarOutlined />, label: "Kế toán", perm: "accounting.reconcile" },
     { key: "/company-cost", icon: <DollarOutlined />, label: "Phải trả kho/cty", perm: "accounting.reconcile" },
+    { key: "/opening-balance", icon: <DollarOutlined />, label: "Số dư đầu kỳ", perm: "accounting.reconcile" },
   ] },
   { title: "Hệ thống", items: [
     { key: "/admin", icon: <SettingOutlined />, label: "Quản trị", perm: "users.list" },
@@ -53,7 +54,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const [ctrl, setCtrl] = useState<Record<string, number> | null>(null);
   useEffect(() => {
     api.get<{ orders: { code: string }[] }>("/stats/alerts").then((r) => setAlerts(r.data.orders ?? [])).catch(() => {});
-    if (can("trackings.list")) api.get<Record<string, number>>("/control/overview").then((r) => setCtrl(r.data)).catch(() => {});
+    if (can("control.view")) api.get<Record<string, number>>("/control/overview").then((r) => setCtrl(r.data)).catch(() => {});
   }, []);
   const CTRL_LABELS: Record<string, string> = {
     notReviewed: "Chưa đánh giá", pendingDeposits: "Cọc chờ xác nhận", docNotCaptured: "Chưa chụp chứng từ",
