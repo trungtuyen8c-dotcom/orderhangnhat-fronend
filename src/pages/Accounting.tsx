@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Row, Col, Card, Statistic, Table, Form, Select, InputNumber, Input, Button, Tag, Space, Popconfirm, Modal, DatePicker, Checkbox, App } from "antd";
+import { Row, Col, Card, Statistic, Table, Form, Select, InputNumber, Input, Button, Tag, Space, Popconfirm, Modal, DatePicker, Checkbox, Divider, App } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import { api } from "../api";
@@ -8,6 +8,15 @@ import { PageContainer } from "../components/PageContainer";
 import { vnd } from "../lib/status";
 
 const TYPE_LABEL: Record<string, string> = { deposit: "Cọc", final: "Thu nốt", refund: "Hoàn" };
+// Loại giao dịch thẻ: out = chi (trừ thẻ), in = thu (cộng thẻ). Chuyển khoản dùng form riêng.
+const CARD_CATS: { value: string; dir: "in" | "out" }[] = [
+  { value: "Mua hàng", dir: "out" },
+  { value: "Hoàn tiền", dir: "in" },
+  { value: "Phí dịch vụ", dir: "out" },
+  { value: "Phí nạp tiền", dir: "out" },
+  { value: "Lỗi giao dịch", dir: "out" },
+  { value: "Chi khác", dir: "out" },
+];
 const sym = (c?: string) => (c === "JPY" ? " ¥" : " ₫");
 const money = (n: number | string | null | undefined, c?: string) =>
   n == null ? "-" : Number(n).toLocaleString(c === "JPY" ? "ja-JP" : "vi-VN") + sym(c);
@@ -16,7 +25,7 @@ const signed = (n: number, c?: string) => (n < 0 ? "-" : "+") + Math.abs(n).toLo
 interface Order { id: string; code: string; status: string; }
 interface Wallet { id: string; name: string; balance: string; currency?: string; }
 interface StmtRow {
-  id: string; date: string; amount: number; type: string; reconciled: boolean; statementRef: string | null;
+  id: string; date: string; amount: number; type: string; category?: string | null; note?: string | null; reconciled: boolean; statementRef: string | null;
   orderCode: string | null; customer: string | null; phone: string | null; trackings: string[]; balance: number;
 }
 interface CustomerDebt { customerId: string; code: string; name: string; phone: string | null; balance: number; updatedAt: string; }
@@ -47,6 +56,8 @@ export default function Accounting() {
   const [form] = Form.useForm();
   const [wForm] = Form.useForm();
   const [fForm] = Form.useForm();
+  const [txnForm] = Form.useForm();
+  const [trForm] = Form.useForm();
   const payCur = Form.useWatch("currency", form) ?? "VND";
   const payAmount = Form.useWatch("amount", form);
   const payRate = Form.useWatch("exchangeRate", form);
@@ -131,6 +142,25 @@ export default function Accounting() {
   }
   async function delWallet(id: string) {
     try { await api.delete(`/accounting/wallets/${id}`); message.success("Đã xóa ví"); loadWallets(); }
+    catch (e: any) { message.error(e?.response?.data?.message ?? "Xóa thất bại"); }
+  }
+
+  async function submitTxn() {
+    const v = await txnForm.validateFields();
+    try {
+      await api.post("/accounting/wallet-txns", { walletId: v.walletId, category: v.category, amount: v.amount, note: v.note, date: v.date?.toISOString() });
+      message.success("Đã ghi giao dịch"); txnForm.resetFields(); loadWallets(); loadStatement();
+    } catch (e: any) { message.error(e?.response?.data?.message ?? "Ghi thất bại"); }
+  }
+  async function submitTransfer() {
+    const v = await trForm.validateFields();
+    try {
+      await api.post("/accounting/wallet-transfer", { fromWalletId: v.fromWalletId, toWalletId: v.toWalletId, amount: v.amount, note: v.note, date: v.date?.toISOString() });
+      message.success("Đã chuyển tiền"); trForm.resetFields(); loadWallets(); loadStatement();
+    } catch (e: any) { message.error(e?.response?.data?.message ?? "Chuyển thất bại"); }
+  }
+  async function delTxn(id: string) {
+    try { await api.delete(`/accounting/wallet-txns/${id}`); message.success("Đã xóa & hoàn số dư"); loadWallets(); loadStatement(); }
     catch (e: any) { message.error(e?.response?.data?.message ?? "Xóa thất bại"); }
   }
 
@@ -277,6 +307,44 @@ export default function Accounting() {
         </Card>
       )}
 
+      {can("wallets.manage") && (
+        <Card title="Giao dịch thẻ (Thu / Chi)" style={{ marginBottom: 16 }}>
+          <Form form={txnForm} layout="inline" onFinish={submitTxn}>
+            <Form.Item name="walletId" rules={[{ required: true, message: "Chọn thẻ" }]}>
+              <Select placeholder="Chọn thẻ" style={{ width: 200 }}
+                options={wallets.map((w) => ({ value: w.id, label: `${w.name} (${money(w.balance, w.currency)})` }))} />
+            </Form.Item>
+            <Form.Item name="category" rules={[{ required: true, message: "Chọn loại" }]}>
+              <Select placeholder="Loại giao dịch" style={{ width: 190 }}
+                options={CARD_CATS.map((c) => ({ value: c.value, label: `${c.value} (${c.dir === "in" ? "Thu +" : "Chi -"})` }))} />
+            </Form.Item>
+            <Form.Item name="amount" rules={[{ required: true }]}>
+              <InputNumber min={1} placeholder="Số tiền" style={{ width: 140 }} formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} />
+            </Form.Item>
+            <Form.Item name="date"><DatePicker format="DD/MM/YYYY" placeholder="Ngày (hôm nay)" /></Form.Item>
+            <Form.Item name="note"><Input placeholder="Ghi chú" style={{ width: 180 }} /></Form.Item>
+            <Form.Item><Button type="primary" htmlType="submit">Ghi</Button></Form.Item>
+          </Form>
+
+          <Divider plain style={{ margin: "12px 0" }}>Chuyển tiền giữa thẻ</Divider>
+          <Form form={trForm} layout="inline" onFinish={submitTransfer}>
+            <Form.Item name="fromWalletId" rules={[{ required: true, message: "Thẻ nguồn" }]}>
+              <Select placeholder="Từ thẻ" style={{ width: 200 }} options={wallets.map((w) => ({ value: w.id, label: w.name }))} />
+            </Form.Item>
+            <Form.Item name="toWalletId" rules={[{ required: true, message: "Thẻ đích" }]}>
+              <Select placeholder="Sang thẻ" style={{ width: 200 }} options={wallets.map((w) => ({ value: w.id, label: w.name }))} />
+            </Form.Item>
+            <Form.Item name="amount" rules={[{ required: true }]}>
+              <InputNumber min={1} placeholder="Số tiền" style={{ width: 140 }} formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} />
+            </Form.Item>
+            <Form.Item name="date"><DatePicker format="DD/MM/YYYY" placeholder="Ngày (hôm nay)" /></Form.Item>
+            <Form.Item name="note"><Input placeholder="Ghi chú" style={{ width: 160 }} /></Form.Item>
+            <Form.Item><Button htmlType="submit">Chuyển</Button></Form.Item>
+          </Form>
+          <p style={{ marginTop: 8, color: "#64748b", fontSize: 12 }}>Chi tự trừ thẻ, Thu tự cộng. Chuyển tiền: 1 lần ghi - thẻ nguồn trừ, thẻ đích cộng (2 thẻ cùng đơn vị tiền).</p>
+        </Card>
+      )}
+
       <Card title="Ghi cọc / thu nốt / hoàn" style={{ marginBottom: 16 }}>
         <Form form={form} layout="inline" onFinish={record}>
           <Form.Item name="orderId" rules={[{ required: true }]}>
@@ -368,11 +436,12 @@ export default function Accounting() {
               render: (_, r: StmtRow) => (
                 <div>
                   <div>
-                    {TYPE_LABEL[r.type] ?? r.type}
+                    {r.category ?? TYPE_LABEL[r.type] ?? r.type}
                     {r.orderCode && <> · <b>{r.orderCode}</b></>}
                     {!r.reconciled && <Tag color="orange" style={{ marginLeft: 8 }}>chờ đối soát</Tag>}
                   </div>
                   <div style={{ fontSize: 12, color: "#888" }}>
+                    {r.note && <>{r.note} · </>}
                     {r.customer ?? "-"}
                     {r.trackings.length > 0 && <> · {r.trackings.join(", ")}</>}
                   </div>
@@ -385,8 +454,15 @@ export default function Accounting() {
             },
             { title: "Số dư", dataIndex: "balance", align: "right", width: 140, render: (v) => money(v, stmtCur) },
             {
-              title: "", width: 100,
-              render: (_, r: StmtRow) => (r.reconciled ? <Tag color="green">đã đối soát</Tag> : <Button size="small" onClick={() => reconcile(r.id)}>Đối soát</Button>),
+              title: "", width: 150,
+              render: (_, r: StmtRow) => (
+                <Space>
+                  {r.reconciled ? <Tag color="green">đã đối soát</Tag> : <Button size="small" onClick={() => reconcile(r.id)}>Đối soát</Button>}
+                  {!r.orderCode && can("wallets.manage") && (
+                    <Popconfirm title="Xóa giao dịch & hoàn số dư?" onConfirm={() => delTxn(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
+                  )}
+                </Space>
+              ),
             },
           ]}
           locale={{ emptyText: "Không có giao dịch" }}

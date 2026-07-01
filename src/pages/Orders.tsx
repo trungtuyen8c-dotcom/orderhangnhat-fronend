@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Card, Table, Button, Modal, Form, Input, InputNumber, Select, Space, Tag,
-  Drawer, Descriptions, Divider, Timeline, DatePicker, App, Checkbox,
+  Drawer, Descriptions, Divider, Timeline, DatePicker, App, Checkbox, Row, Col,
 } from "antd";
 import dayjs from "dayjs";
 import { PlusOutlined, MinusCircleOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
@@ -13,7 +13,7 @@ import { STATUS_LABEL, STATUS_COLOR, vnd } from "../lib/status";
 
 const STATUS_OPTIONS = Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }));
 
-interface Order { id: string; code: string; status: string; totalQuote: string | null; totalVnd: string | null; createdAt?: string; customer?: { name: string }; }
+interface Order { id: string; code: string; status: string; totalQuote: string | null; totalVnd: string | null; orderDate?: string; createdAt?: string; customer?: { name: string }; }
 interface Customer { id: string; name: string; }
 
 const jpy = (n: number | string | null | undefined) => (n == null ? "-" : Number(n).toLocaleString() + " ¥");
@@ -80,8 +80,8 @@ export default function Orders() {
     return rows.filter((o) => {
       if (kw && ![o.code, o.customer?.name].some((x) => (x ?? "").toLowerCase().includes(kw))) return false;
       if (statusFilter && o.status !== statusFilter) return false;
-      if (range && o.createdAt) {
-        const d = dayjs(o.createdAt);
+      if (range && (o.orderDate || o.createdAt)) {
+        const d = dayjs(o.orderDate ?? o.createdAt);
         if (d.isBefore(range[0], "day") || d.isAfter(range[1], "day")) return false;
       }
       return true;
@@ -103,7 +103,7 @@ export default function Orders() {
 
   function openCreate() {
     setEditId(null); form.resetFields();
-    form.setFieldsValue({ items: [{ qty: 1, unitPriceJpy: 0 }], shipCurrency: "JPY", surchargeCurrency: "VND", discountCurrency: "VND", serviceFeeCurrency: "VND", jpDomesticShipCurrency: "JPY", intlShipCurrency: "VND" });
+    form.setFieldsValue({ orderDate: dayjs(), items: [{ qty: 1, unitPriceJpy: 0 }], shipCurrency: "JPY", surchargeCurrency: "VND", discountCurrency: "VND", serviceFeeCurrency: "VND", jpDomesticShipCurrency: "JPY", intlShipCurrency: "VND" });
     setOpen(true);
   }
 
@@ -113,6 +113,7 @@ export default function Orders() {
     setEditId(id);
     form.setFieldsValue({
       customerId: o.customerId,
+      orderDate: o.orderDate ? dayjs(o.orderDate) : undefined,
       items: o.items.map((i: any) => ({ name: i.name, url: i.url, qty: i.qty, unitPriceJpy: Number(i.unitPriceJpy), shipJpy: i.shipJpy != null ? Number(i.shipJpy) : undefined, purchaseDate: i.purchaseDate ? dayjs(i.purchaseDate) : undefined, paymentMethod: i.paymentMethod ?? undefined })),
       exchangeRate: o.exchangeRate ? Number(o.exchangeRate) : undefined,
       shipAmount: Number(o.shipAmount), shipCurrency: o.shipCurrency,
@@ -128,6 +129,7 @@ export default function Orders() {
 
   async function submitOrder() {
     const v = await form.validateFields();
+    v.orderDate = v.orderDate ? v.orderDate.format("YYYY-MM-DD") : undefined;
     v.items = (v.items ?? []).map((i: any) => ({ ...i, purchaseDate: i.purchaseDate ? i.purchaseDate.format("YYYY-MM-DD") : undefined }));
     try {
       if (editId) await api.patch(`/orders/${editId}`, v);
@@ -200,7 +202,7 @@ export default function Orders() {
         rowKey="id" loading={loading} dataSource={shown} size="middle"
         columns={[
           { title: "Mã", dataIndex: "code" },
-          { title: "Ngày tạo", dataIndex: "createdAt", render: (v) => (v ? new Date(v).toLocaleDateString("vi-VN") : "-") },
+          { title: "Ngày đơn", dataIndex: "orderDate", render: (v, r) => { const d = v ?? r.createdAt; return d ? new Date(d).toLocaleDateString("vi-VN") : "-"; } },
           { title: "Khách", dataIndex: ["customer", "name"] },
           { title: "Trạng thái", dataIndex: "status", render: (v) => <Tag color={STATUS_COLOR[v]}>{STATUS_LABEL[v] ?? v}</Tag> },
           { title: "Báo giá", dataIndex: "totalQuote", render: (v) => jpy(v) },
@@ -223,10 +225,19 @@ export default function Orders() {
 
       <Modal title={editId ? "Sửa đơn" : "Tạo đơn"} open={open} onOk={submitOrder} onCancel={() => { setOpen(false); setEditId(null); }} okText="Lưu" width={680}>
         <Form form={form} layout="vertical">
-          <Form.Item name="customerId" label="Khách hàng" rules={[{ required: true }]}>
-            <Select showSearch optionFilterProp="label" placeholder="Chọn khách"
-              options={customers.map((c) => ({ value: c.id, label: c.name }))} />
-          </Form.Item>
+          <Row gutter={12}>
+            <Col flex="auto">
+              <Form.Item name="customerId" label="Khách hàng" rules={[{ required: true }]}>
+                <Select showSearch optionFilterProp="label" placeholder="Chọn khách"
+                  options={customers.map((c) => ({ value: c.id, label: c.name }))} />
+              </Form.Item>
+            </Col>
+            <Col>
+              <Form.Item name="orderDate" label="Ngày đơn" rules={[{ required: true, message: "Chọn ngày" }]}>
+                <DatePicker format="DD/MM/YYYY" style={{ width: 150 }} />
+              </Form.Item>
+            </Col>
+          </Row>
           <Divider>Món hàng</Divider>
           <Form.List name="items">
             {(fields, { add, remove }) => (
