@@ -13,7 +13,7 @@ import { STATUS_LABEL, STATUS_COLOR, vnd } from "../lib/status";
 
 const STATUS_OPTIONS = Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }));
 
-interface Order { id: string; code: string; status: string; totalQuote: string | null; totalVnd: string | null; orderDate?: string; createdAt?: string; customer?: { name: string }; }
+interface Order { id: string; code: string; status: string; totalQuote: string | null; totalVnd: string | null; orderDate?: string; createdAt?: string; fixRequest?: string | null; customer?: { name: string }; }
 interface Customer { id: string; name: string; }
 
 const jpy = (n: number | string | null | undefined) => (n == null ? "-" : Number(n).toLocaleString() + " ¥");
@@ -68,7 +68,7 @@ export default function Orders() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 
-  const load = () => { setLoading(true); api.get<Order[]>("/orders").then((r) => setRows(r.data)).finally(() => setLoading(false)); };
+  const load = () => { setLoading(true); api.get<Order[]>("/orders", { params: { exclude: "yahoo" } }).then((r) => setRows(r.data)).finally(() => setLoading(false)); };
   useEffect(() => {
     load();
     if (can("customers.list")) api.get<Customer[]>("/customers").then((r) => setCustomers(r.data)).catch(() => {});
@@ -138,6 +138,10 @@ export default function Orders() {
     } catch (e: any) { message.error(e?.response?.data?.message ?? "Lưu đơn thất bại"); }
   }
 
+  async function resolveFix(id: string) {
+    try { await api.post(`/orders/${id}/resolve-fix`, {}); message.success("Đã gỡ yêu cầu sửa"); load(); }
+    catch (e: any) { message.error(e?.response?.data?.message ?? "Lỗi"); }
+  }
   async function del(id: string) {
     try { await api.delete(`/orders/${id}`); message.success("Đã xóa đơn"); load(); }
     catch (e: any) {
@@ -201,7 +205,7 @@ export default function Orders() {
       <Table
         rowKey="id" loading={loading} dataSource={shown} size="middle"
         columns={[
-          { title: "Mã", dataIndex: "code" },
+          { title: "Mã", dataIndex: "code", render: (v, o) => (<span>{v}{o.fixRequest && <Tag color="red" style={{ marginLeft: 6 }} title={o.fixRequest}>Kế toán YC sửa</Tag>}</span>) },
           { title: "Ngày đơn", dataIndex: "orderDate", render: (v, r) => { const d = v ?? r.createdAt; return d ? new Date(d).toLocaleDateString("vi-VN") : "-"; } },
           { title: "Khách", dataIndex: ["customer", "name"] },
           { title: "Trạng thái", dataIndex: "status", render: (v) => <Tag color={STATUS_COLOR[v]}>{STATUS_LABEL[v] ?? v}</Tag> },
@@ -211,6 +215,7 @@ export default function Orders() {
             title: "Hành động", render: (_, o) => (
               <Space wrap>
                 <Button size="small" icon={<EyeOutlined />} onClick={() => openDetail(o.id)}>Chi tiết</Button>
+                {o.fixRequest && can("orders.update") && <Popconfirm title={`Đã sửa xong? (${o.fixRequest})`} onConfirm={() => resolveFix(o.id)}><Button size="small" type="primary" ghost>Đã sửa</Button></Popconfirm>}
                 {can("orders.update") && ["draft", "quoted"].includes(o.status) && <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(o.id)} />}
                 {can("orders.update_status") && (
                   <Select size="small" value={o.status} style={{ width: 130 }}

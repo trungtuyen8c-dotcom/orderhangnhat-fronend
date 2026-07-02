@@ -12,6 +12,8 @@ const TYPE_LABEL: Record<string, string> = { deposit: "Cọc", final: "Thu nốt
 const CARD_CATS: { value: string; dir: "in" | "out" }[] = [
   { value: "Mua hàng", dir: "out" },
   { value: "Hoàn tiền", dir: "in" },
+  { value: "Nạp tiền", dir: "in" },
+  { value: "Thu khác", dir: "in" },
   { value: "Phí dịch vụ", dir: "out" },
   { value: "Phí nạp tiền", dir: "out" },
   { value: "Lỗi giao dịch", dir: "out" },
@@ -26,7 +28,7 @@ interface Order { id: string; code: string; status: string; }
 interface Wallet { id: string; name: string; balance: string; currency?: string; }
 interface StmtRow {
   id: string; date: string; amount: number; type: string; category?: string | null; note?: string | null; reconciled: boolean; statementRef: string | null;
-  orderCode: string | null; customer: string | null; phone: string | null; trackings: string[]; balance: number;
+  orderId: string | null; orderCode: string | null; fixRequest?: string | null; customer: string | null; phone: string | null; trackings: string[]; balance: number;
 }
 interface CustomerDebt { customerId: string; code: string; name: string; phone: string | null; balance: number; updatedAt: string; }
 
@@ -58,6 +60,8 @@ export default function Accounting() {
   const [fForm] = Form.useForm();
   const [txnForm] = Form.useForm();
   const [trForm] = Form.useForm();
+  const [fixFor, setFixFor] = useState<StmtRow | null>(null);
+  const [fixForm] = Form.useForm();
   const payCur = Form.useWatch("currency", form) ?? "VND";
   const payAmount = Form.useWatch("amount", form);
   const payRate = Form.useWatch("exchangeRate", form);
@@ -155,9 +159,16 @@ export default function Accounting() {
   async function submitTransfer() {
     const v = await trForm.validateFields();
     try {
-      await api.post("/accounting/wallet-transfer", { fromWalletId: v.fromWalletId, toWalletId: v.toWalletId, amount: v.amount, note: v.note, date: v.date?.toISOString() });
+      await api.post("/accounting/wallet-transfer", { fromWalletId: v.fromWalletId, toWalletId: v.toWalletId, amount: v.amount, fee: v.fee || undefined, note: v.note, date: v.date?.toISOString() });
       message.success("Đã chuyển tiền"); trForm.resetFields(); loadWallets(); loadStatement();
     } catch (e: any) { message.error(e?.response?.data?.message ?? "Chuyển thất bại"); }
+  }
+  async function submitFix() {
+    const v = await fixForm.validateFields();
+    try {
+      await api.post(`/orders/${fixFor!.orderId}/request-fix`, { note: v.note });
+      message.success("Đã gửi yêu cầu sửa cho sale"); setFixFor(null); fixForm.resetFields(); loadStatement();
+    } catch (e: any) { message.error(e?.response?.data?.message ?? "Gửi thất bại"); }
   }
   async function delTxn(id: string) {
     try { await api.delete(`/accounting/wallet-txns/${id}`); message.success("Đã xóa & hoàn số dư"); loadWallets(); loadStatement(); }
@@ -337,11 +348,12 @@ export default function Accounting() {
             <Form.Item name="amount" rules={[{ required: true }]}>
               <InputNumber min={1} placeholder="Số tiền" style={{ width: 140 }} formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} />
             </Form.Item>
+            <Form.Item name="fee"><InputNumber min={0} placeholder="Phí (nếu có)" style={{ width: 130 }} formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} /></Form.Item>
             <Form.Item name="date"><DatePicker format="DD/MM/YYYY" placeholder="Ngày (hôm nay)" /></Form.Item>
             <Form.Item name="note"><Input placeholder="Ghi chú" style={{ width: 160 }} /></Form.Item>
             <Form.Item><Button htmlType="submit">Chuyển</Button></Form.Item>
           </Form>
-          <p style={{ marginTop: 8, color: "#64748b", fontSize: 12 }}>Chi tự trừ thẻ, Thu tự cộng. Chuyển tiền: 1 lần ghi - thẻ nguồn trừ, thẻ đích cộng (2 thẻ cùng đơn vị tiền).</p>
+          <p style={{ marginTop: 8, color: "#64748b", fontSize: 12 }}>Chi tự trừ thẻ, Thu tự cộng. Chuyển tiền: thẻ nguồn trừ, thẻ đích cộng (2 thẻ cùng đơn vị tiền); phí (nếu có) trừ thêm thẻ nguồn.</p>
         </Card>
       )}
 
@@ -439,6 +451,7 @@ export default function Accounting() {
                     {r.category ?? TYPE_LABEL[r.type] ?? r.type}
                     {r.orderCode && <> · <b>{r.orderCode}</b></>}
                     {!r.reconciled && <Tag color="orange" style={{ marginLeft: 8 }}>chờ đối soát</Tag>}
+                    {r.fixRequest && <Tag color="red" style={{ marginLeft: 4 }} title={r.fixRequest}>đã yêu cầu sửa</Tag>}
                   </div>
                   <div style={{ fontSize: 12, color: "#888" }}>
                     {r.note && <>{r.note} · </>}
@@ -458,6 +471,7 @@ export default function Accounting() {
               render: (_, r: StmtRow) => (
                 <Space>
                   {r.reconciled ? <Tag color="green">đã đối soát</Tag> : <Button size="small" onClick={() => reconcile(r.id)}>Đối soát</Button>}
+                  {r.orderId && <Button size="small" danger={!!r.fixRequest} onClick={() => { setFixFor(r); fixForm.setFieldsValue({ note: r.fixRequest ?? "" }); }}>Yêu cầu sửa</Button>}
                   {!r.orderCode && can("wallets.manage") && (
                     <Popconfirm title="Xóa giao dịch & hoàn số dư?" onConfirm={() => delTxn(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
                   )}
@@ -468,6 +482,15 @@ export default function Accounting() {
           locale={{ emptyText: "Không có giao dịch" }}
         />
       </Card>
+
+      <Modal title={`Yêu cầu sale sửa đơn ${fixFor?.orderCode ?? ""}`} open={!!fixFor} onOk={submitFix} onCancel={() => setFixFor(null)} okText="Gửi yêu cầu">
+        <p style={{ color: "#64748b" }}>Nội dung sẽ hiện ở đơn để sale sửa lại (VD: sai số tiền, sai thẻ, thiếu phí...).</p>
+        <Form form={fixForm} layout="vertical">
+          <Form.Item name="note" label="Nội dung yêu cầu sửa" rules={[{ required: true, message: "Nhập nội dung" }]}>
+            <Input.TextArea rows={3} placeholder="VD: JA10007 số tiền phải là 3.800¥, không phải 3.500¥" />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal title={walletModal?.mode === "create" ? "Thêm ví" : "Sửa ví"} open={!!walletModal} onOk={submitWallet} onCancel={() => setWalletModal(null)} okText="Lưu">
         <Form form={wForm} layout="vertical" initialValues={{ currency: "VND" }}>

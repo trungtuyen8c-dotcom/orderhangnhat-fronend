@@ -17,6 +17,7 @@ const GROUPS: { title?: string; items: NavItem[] }[] = [
   { items: [{ key: "/", icon: <DashboardOutlined />, label: "Dashboard" }] },
   { title: "Vận hành", items: [
     { key: "/orders", icon: <ShoppingCartOutlined />, label: "Đơn hàng", perm: "orders.list" },
+    { key: "/yahoo", icon: <ShoppingCartOutlined />, label: "Thanh toán sau Yahoo", perm: "orders.list" },
     { key: "/customers", icon: <TeamOutlined />, label: "Khách hàng", perm: "customers.list" },
   ] },
   { title: "Kho & Vận chuyển", items: [

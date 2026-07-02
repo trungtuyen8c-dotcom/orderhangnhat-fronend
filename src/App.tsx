@@ -5,6 +5,7 @@ import { Layout } from "./components/Layout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Orders from "./pages/Orders";
+import Yahoo from "./pages/Yahoo";
 import Customers from "./pages/Customers";
 import WarehouseJp from "./pages/WarehouseJp";
 import Shipments from "./pages/Shipments";
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/tra-cuu/:token" element={<PublicLookup />} />
           <Route path="/" element={<RequireAuth><Layout><Dashboard /></Layout></RequireAuth>} />
           <Route path="/orders" element={page("orders.list", <Orders />)} />
+          <Route path="/yahoo" element={page("orders.list", <Yahoo />)} />
           <Route path="/customers" element={page("customers.list", <Customers />)} />
           <Route path="/warehouse-jp" element={page("warehouse.weigh_jp", <WarehouseJp />)} />
           <Route path="/shipments" element={page("shipments.list", <Shipments />)} />
